@@ -1,0 +1,221 @@
+/* ==========================================================================
+   Prescription Analysis page
+   --------------------------------------------------------------------------
+   A white page with a blue accent. The page adds `theme-analysis` to <body>
+   while it is mounted, which re-points the colour tokens below. Every other
+   page keeps the site palette because it never gets that class.
+   ========================================================================== */
+
+body.theme-analysis,
+:root[data-theme="light"] body.theme-analysis {
+  --bg: #ffffff;
+  --bg-2: #f8fafc;
+  --surface: #ffffff;
+  --surface-2: #f8fafc;
+  --surface-sunk: #f1f5f9;
+  --text: #0f172a;
+  --text-muted: #475569;
+  --text-subtle: #64748b;
+  --line: #e4e9f1;
+  --line-strong: #d2dae6;
+
+  --brand: #1d5fd8;
+  --brand-hover: #1a50b8;
+  --brand-soft: #e8f0fe;
+  --brand-softer: #f5f8ff;
+  --brand-text: #1a50b8;
+  --brand-line: #bcd0f7;
+  --on-brand: #ffffff;
+  --grad-brand: #1d5fd8;
+
+  --ok: #16a34a;
+  --ok-soft: #e7f6ec;
+  --ok-text: #15803d;
+  --ok-line: #bfe6cc;
+  --warn: #ea580c;
+  --warn-soft: #fff0e6;
+  --warn-text: #c2410c;
+  --warn-line: #fbd0b0;
+  --risk: #dc2626;
+  --risk-soft: #fdecec;
+  --risk-text: #b91c1c;
+  --risk-line: #f4bcbc;
+
+  --shadow-xs: none;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --glow-brand: none;
+  --ring: 0 0 0 3px rgba(29, 95, 216, 0.25);
+}
+
+:root[data-theme="dark"] body.theme-analysis {
+  --bg: #0b1220;
+  --bg-2: #0f1830;
+  --surface: #111b30;
+  --surface-2: #15213a;
+  --surface-sunk: #0a101d;
+  --text: #e6edf8;
+  --text-muted: #b3bfd4;
+  --text-subtle: #8b99b3;
+  --line: #22304d;
+  --line-strong: #31415f;
+
+  --brand: #3b74e6;
+  --brand-hover: #5b8def;
+  --brand-soft: rgba(91, 141, 239, 0.16);
+  --brand-softer: rgba(91, 141, 239, 0.08);
+  --brand-text: #9db9f5;
+  --brand-line: rgba(91, 141, 239, 0.45);
+  --on-brand: #ffffff;
+  --grad-brand: #3b74e6;
+
+  --ok: #4ade80;
+  --ok-soft: rgba(74, 222, 128, 0.12);
+  --ok-text: #6ee7a0;
+  --ok-line: rgba(74, 222, 128, 0.34);
+  --warn: #fb923c;
+  --warn-soft: rgba(251, 146, 60, 0.14);
+  --warn-text: #fdba74;
+  --warn-line: rgba(251, 146, 60, 0.38);
+  --risk: #f87171;
+  --risk-soft: rgba(248, 113, 113, 0.14);
+  --risk-text: #fca5a5;
+  --risk-line: rgba(248, 113, 113, 0.38);
+
+  --shadow-sm: none;
+  --glow-brand: none;
+  --ring: 0 0 0 3px rgba(91, 141, 239, 0.4);
+}
+
+/* ---- Header block ---------------------------------------------------------------- */
+
+body.theme-analysis .page-head { margin-bottom: var(--s-5); }
+body.theme-analysis .page-head h1 { font-size: var(--t-2xl); }
+body.theme-analysis .page-head-row { align-items: flex-start; }
+
+.page-meta { display: flex; flex-wrap: wrap; gap: 0.2rem 0.6rem; margin-top: 0.5rem; color: var(--text-muted); font-size: var(--t-base); }
+.page-meta > span + span::before { content: "•"; margin-right: 0.6rem; color: var(--text-subtle); }
+
+.pa-outline { background: var(--brand-softer); color: var(--brand-text); border: 1px solid var(--brand-line); }
+.pa-outline:hover:not(:disabled) { background: var(--brand-soft); }
+
+/* ---- Summary --------------------------------------------------------------------- */
+
+.pa { display: block; }
+.pa-summary { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); }
+.pa-savings { padding: 1.25rem 1.5rem; border-right: 1px solid var(--line); }
+.pa-label { display: block; font-weight: 650; font-size: var(--t-base); }
+.pa-amount { font-family: var(--font-display); font-size: clamp(1.9rem, 1.5rem + 1.6vw, 2.5rem); font-weight: 800; letter-spacing: -0.03em; line-height: 1.15; margin: 0.15rem 0; }
+.pa-amount.is-none { font-size: var(--t-xl); color: var(--text-muted); }
+.pa-savings p { margin: 0; color: var(--text-muted); font-size: var(--t-sm); }
+
+.pa-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; margin: 0; padding: 0.9rem; }
+.pa-stats > div { display: flex; align-items: center; gap: 0.75rem; padding: 0.8rem 1rem; border: 1px solid var(--line); border-radius: var(--r-sm); }
+.pa-stats dd { order: -1; margin: 0; font-family: var(--font-display); font-size: 1.9rem; font-weight: 800; line-height: 1; }
+.pa-stats dt { color: var(--text-muted); font-size: var(--t-sm); line-height: 1.3; }
+.pa-stats .is-attn dd { color: var(--warn-text); }
+.pa-summary-note { grid-column: 1 / -1; margin: 0; padding: 0.7rem 1.5rem; border-top: 1px solid var(--line); color: var(--text-subtle); font-size: var(--t-xs); }
+
+.pa-notice { margin: 0.6rem 0 var(--s-6); color: var(--text-subtle); font-size: var(--t-xs); }
+
+/* ---- Medicines table ----------------------------------------------------------------- */
+
+.pa-section h2 { margin: 0; font-size: var(--t-xl); }
+.pa-sub { margin: 0.2rem 0 var(--s-4); color: var(--text-muted); }
+
+.pa-table-wrap { border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; background: var(--surface); }
+.pa-table-wrap > .alert { margin: var(--s-3); }
+.pa-table { width: 100%; border-collapse: collapse; font-size: var(--t-sm); }
+.pa-table th { padding: 0.8rem 1rem; background: var(--surface-2); border-bottom: 1px solid var(--line); text-align: left; font-size: var(--t-xs); font-weight: 700; color: var(--text); line-height: 1.3; }
+.pa-table td { padding: 1rem; border-top: 1px solid var(--line); vertical-align: middle; }
+.pa-table tbody tr:first-child td { border-top: none; }
+.pa-table .col-n { width: 48px; color: var(--text-muted); }
+.pa-table .col-action { width: 118px; text-align: center; }
+.pa-table .col-med strong { display: block; font-size: var(--t-base); font-weight: 700; line-height: 1.3; }
+.pa-table .sub { display: block; margin-top: 0.15rem; color: var(--text-muted); font-size: var(--t-xs); line-height: 1.35; }
+.pa-table s { color: var(--text-subtle); }
+.pa-table .val { min-width: 0; }
+.pa-table td b { font-weight: 800; }
+
+.pa-row.is-attn { background: color-mix(in srgb, var(--warn-soft) 55%, transparent); }
+.pa-row.is-open { background: var(--brand-softer); }
+.pa-row.is-attn.is-open { background: color-mix(in srgb, var(--warn-soft) 55%, transparent); }
+
+.pa-pill { display: inline-block; padding: 0.22rem 0.65rem; border-radius: 6px; font-size: var(--t-xs); font-weight: 650; line-height: 1.35; white-space: nowrap; }
+.pa-pill.is-ok { background: var(--ok-soft); color: var(--ok-text); }
+.pa-pill.is-warn { background: var(--warn-soft); color: var(--warn-text); }
+.pa-pill.is-risk { background: var(--risk-soft); color: var(--risk-text); margin-top: 0.3rem; }
+.pa-row.is-attn .pa-pill.is-warn { background: color-mix(in srgb, var(--warn) 18%, var(--surface)); }
+
+.pa-save { display: block; padding: 0.5rem 0.6rem; border-radius: var(--r-xs); background: var(--surface-sunk); text-align: center; line-height: 1.3; }
+.pa-save b { display: block; font-size: var(--t-sm); }
+.pa-save span { display: block; font-size: var(--t-xs); color: var(--text-muted); }
+.pa-save.is-none { color: var(--text-muted); font-size: var(--t-xs); }
+
+.pa-table .col-action .btn { display: flex; width: 86px; margin-inline: auto; }
+.pa-table .col-action .btn + .btn { margin-top: 0.35rem; }
+
+.pa-detail-row > td { padding: 0; background: var(--brand-softer); }
+.pa-detail-row .detail { padding: var(--s-4) var(--s-5) var(--s-5); }
+
+.pa-table-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); flex-wrap: wrap; padding: 0.8rem 1rem; border-top: 1px solid var(--line); }
+.pa-table-foot p { margin: 0; color: var(--text-subtle); font-size: var(--t-xs); }
+
+.pa-skel { display: grid; gap: 0.75rem; }
+.pa-skel .skeleton { height: 56px; }
+
+/* ---- Safety, original text, report ------------------------------------------------------ */
+
+.pa-more { display: grid; gap: 0.6rem; margin-top: var(--s-5); }
+.pa-disc { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); }
+.pa-disc summary { display: flex; align-items: center; gap: 1rem; padding: 1rem 1.25rem; cursor: pointer; list-style: none; font-weight: 650; }
+.pa-disc summary::-webkit-details-marker { display: none; }
+.pa-disc summary::after { content: ""; margin: 0 0.25rem 0 auto; width: 8px; height: 8px; border-right: 2px solid var(--text-subtle); border-bottom: 2px solid var(--text-subtle); transform: translateY(-2px) rotate(45deg); }
+.pa-disc[open] summary::after { transform: translateY(2px) rotate(-135deg); }
+.pa-disc summary:focus-visible { box-shadow: var(--ring); }
+.pa-disc-note { color: var(--text-muted); font-size: var(--t-sm); font-weight: 400; }
+.pa-disc-body { padding: var(--s-4) 1.25rem 1.25rem; border-top: 1px solid var(--line); }
+
+.pa-report { display: flex; align-items: center; justify-content: space-between; gap: var(--s-4); flex-wrap: wrap; margin-top: var(--s-5); padding: 1.25rem 1.5rem; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); }
+.pa-report h2 { margin: 0 0 0.15rem; font-size: var(--t-lg); }
+.pa-report p { margin: 0; color: var(--text-muted); font-size: var(--t-sm); max-width: 60ch; }
+
+/* ---- Narrow screens: each medicine becomes a stacked card -------------------------------------- */
+
+@media (max-width: 900px) {
+  .pa-summary { grid-template-columns: 1fr; }
+  .pa-savings { border-right: none; border-bottom: 1px solid var(--line); }
+
+  .pa-table thead { display: none; }
+  .pa-table, .pa-table tbody, .pa-table tr, .pa-table td { display: block; width: auto; }
+  .pa-table .col-n { display: none; }
+  .pa-row { padding: 0.9rem 1rem; border-top: 1px solid var(--line); }
+  .pa-table tbody tr:first-child { border-top: none; }
+  .pa-row td { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--s-3); padding: 0.4rem 0; border: none; text-align: right; }
+  .pa-row td::before { content: attr(data-label); flex-shrink: 0; color: var(--text-subtle); font-size: var(--t-xs); font-weight: 600; text-align: left; padding-top: 0.15rem; }
+  .pa-row td.col-med { display: block; text-align: left; padding-top: 0; }
+  .pa-row td.col-med::before { display: none; }
+  .pa-row td > .val { text-align: right; }
+  .pa-save { min-width: 110px; }
+  .pa-table .col-action { width: auto; display: flex; justify-content: flex-end; gap: 0.5rem; padding-top: 0.7rem; margin-top: 0.3rem; border-top: 1px solid var(--line); }
+  .pa-table .col-action::before { display: none; }
+  .pa-table .col-action .btn { width: auto; min-width: 84px; margin: 0; }
+  .pa-table .col-action .btn + .btn { margin: 0; }
+  .pa-detail-row { border-top: 1px solid var(--line); }
+  .pa-detail-row > td { display: block; }
+  .pa-detail-row .detail { padding: var(--s-3) var(--s-4) var(--s-4); }
+}
+
+@media (max-width: 600px) {
+  .pa-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; padding: 0.75rem; }
+  .pa-stats > div { flex-direction: column; align-items: flex-start; gap: 0.3rem; padding: 0.7rem; }
+  .pa-stats dd { font-size: 1.6rem; }
+  .pa-stats dt { font-size: var(--t-xs); }
+  .pa-report { flex-direction: column; align-items: stretch; }
+  .pa-report .btn { width: 100%; }
+  body.theme-analysis .page-head-actions { width: 100%; }
+  body.theme-analysis .page-head-actions .btn { width: 100%; }
+  .pa-disc summary { flex-wrap: wrap; row-gap: 0.15rem; }
+}
+
+/* an alternative whose price the backend flagged as extreme - listed, never counted as a saving */
+.alts .warn-text { color: var(--warn-text); display: block; }

@@ -1,0 +1,23 @@
+# secrets and personal data - never commit
+.env
+*.env.local
+backend/uploads/
+backend/uploads/**
+
+# data with unconfirmed redistribution terms (DDInter): download it yourself, see backend/database/PROVENANCE.md
+backend/database/data/ddinter/
+
+# environments, build output, caches
+venv/
+node_modules/
+dist/
+.test-build/
+__pycache__/
+*.pyc
+*.log
+
+# local tooling, backups and working material
+.claude/
+backups/
+paper/
+pharmacomparepdf.pdf

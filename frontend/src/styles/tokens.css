@@ -1,0 +1,217 @@
+/* ==========================================================================
+   PharmaCompare design tokens
+   --------------------------------------------------------------------------
+   Components never hardcode a colour: they use the SEMANTIC tokens below
+   (--brand, --ok, --warn, --risk, --surface ...). Each theme defines those
+   once, so light and dark are designed separately instead of inverted.
+
+   Light  - warm ivory paper, white surfaces, deep navy ink.
+            Muted violet-blue leads; coral/peach marks "look at this";
+            a calm teal means success. No bright greens.
+   Dark   - deep navy ground, lifted surfaces, soft violet / coral / teal
+            accents tuned for contrast on the dark ground.
+   ========================================================================== */
+
+:root {
+  /* --- Shape, type, space, motion (theme-independent) -------------------- */
+  --r-xs: 6px;
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-lg: 20px;
+  --r-xl: 28px;
+  --r-full: 999px;
+
+  --font-display: "Bricolage Grotesque", "Inter", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Inter", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  --font-hand: "Caveat", "Segoe Script", "Bradley Hand", cursive;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --t-xs:   clamp(0.72rem, 0.70rem + 0.10vw, 0.78rem);
+  --t-sm:   clamp(0.82rem, 0.79rem + 0.14vw, 0.90rem);
+  --t-base: clamp(0.92rem, 0.89rem + 0.16vw, 1.02rem);
+  --t-md:   clamp(1.04rem, 0.99rem + 0.24vw, 1.20rem);
+  --t-lg:   clamp(1.22rem, 1.12rem + 0.46vw, 1.50rem);
+  --t-xl:   clamp(1.50rem, 1.30rem + 0.90vw, 2.05rem);
+  --t-2xl:  clamp(1.90rem, 1.55rem + 1.70vw, 2.90rem);
+  --t-3xl:  clamp(2.35rem, 1.65rem + 3.30vw, 4.10rem);
+
+  --s-1: 0.25rem;
+  --s-2: 0.5rem;
+  --s-3: 0.75rem;
+  --s-4: 1rem;
+  --s-5: 1.5rem;
+  --s-6: 2rem;
+  --s-7: 3rem;
+  --s-8: 4.5rem;
+
+  --shell: 1180px;
+  --shell-narrow: 780px;
+  --header-h: 68px;
+
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --fast: 140ms;
+  --mid: 220ms;
+  --slow: 380ms;
+}
+
+/* ==========================================================================
+   Light theme (default)
+   ========================================================================== */
+:root, :root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg:           #fbf7ef;
+  --bg-2:         #f5efe3;
+  --surface:      #ffffff;
+  --surface-2:    #fdfaf4;
+  --surface-sunk: #f3eee3;
+  --overlay:      rgba(16, 22, 44, 0.46);
+
+  --text:        #141c33;
+  --text-muted:  #475069;
+  --text-subtle: #6a728d;
+  --text-invert: #ffffff;
+
+  --line:        #eae4d6;
+  --line-strong: #d9d2c1;
+
+  /* Brand = muted violet-blue */
+  --brand:        #4a4fb4;
+  --brand-hover:  #3b3f98;
+  --brand-soft:   #ecedf9;
+  --brand-softer: #f6f6fc;
+  --brand-text:   #3a3e98;
+  --brand-line:   #c6c9ee;
+  --on-brand:     #ffffff;
+
+  /* Success / savings = calm teal */
+  --ok:        #2b8577;
+  --ok-soft:   #e4f1ee;
+  --ok-text:   #1d6a5e;
+  --ok-line:   #b9dbd3;
+
+  /* Attention / needs verification = coral */
+  --warn:      #de6f3f;
+  --warn-soft: #fdece3;
+  --warn-text: #9a4219;
+  --warn-line: #f5ccb6;
+
+  /* Error / risk = rose */
+  --risk:      #c8344c;
+  --risk-soft: #fbe9ec;
+  --risk-text: #a02238;
+  --risk-line: #eebcc5;
+
+  --info-soft: #ecedf8;
+  --info-text: #3d4378;
+
+  --accent-coral:  #ee7f62;
+  --accent-orange: var(--accent-coral);
+  --accent-teal:   #2b8577;
+  --accent-peach:  #f6c3a6;
+
+  --grad-brand: linear-gradient(135deg, #4a4fb4 0%, #5b60c6 100%);
+  --grad-hero:
+    linear-gradient(180deg, transparent 62%, var(--bg) 100%),
+    radial-gradient(760px 460px at 90% 0%, rgba(91, 96, 198, 0.17), transparent 62%),
+    radial-gradient(620px 420px at 0% 12%, rgba(246, 170, 140, 0.22), transparent 60%);
+
+  --shadow-xs: 0 1px 2px rgba(20, 28, 51, 0.05);
+  --shadow-sm: 0 1px 2px rgba(20, 28, 51, 0.05), 0 2px 6px rgba(20, 28, 51, 0.05);
+  --shadow-md: 0 2px 6px rgba(20, 28, 51, 0.06), 0 10px 24px rgba(20, 28, 51, 0.07);
+  --shadow-lg: 0 4px 10px rgba(20, 28, 51, 0.07), 0 18px 40px rgba(20, 28, 51, 0.12);
+  --ring: 0 0 0 3px rgba(74, 79, 180, 0.28);
+  --glow-brand: 0 6px 18px rgba(74, 79, 180, 0.28);
+
+  /* Scanner (landing hero) */
+  --scan: #5b60c6;
+  --scan-glow: rgba(91, 96, 198, 0.55);
+  --paper: #fffdf8;
+  --paper-line: #ece5d6;
+  --paper-ink: #1b2340;
+  --paper-hand: #2a3470;
+}
+
+/* ==========================================================================
+   Dark theme - deep navy ground, lifted surfaces, soft accents
+   ========================================================================== */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg:           #0d1220;
+  --bg-2:         #111831;
+  --surface:      #161d36;
+  --surface-2:    #1b2342;
+  --surface-sunk: #0a0e1b;
+  --overlay:      rgba(4, 6, 16, 0.68);
+
+  --text:        #eceef8;
+  --text-muted:  #b6bbd3;
+  --text-subtle: #8f95b5;
+  --text-invert: #0d1220;
+
+  --line:        #252d4e;
+  --line-strong: #343e68;
+
+  --brand:        #7a80ee;
+  --brand-hover:  #9298ff;
+  --brand-soft:   rgba(122, 128, 238, 0.16);
+  --brand-softer: rgba(122, 128, 238, 0.09);
+  --brand-text:   #c1c5ff;
+  --brand-line:   rgba(122, 128, 238, 0.45);
+  --on-brand:     #ffffff;
+
+  --ok:        #5fc4b4;
+  --ok-soft:   rgba(95, 196, 180, 0.13);
+  --ok-text:   #86d8ca;
+  --ok-line:   rgba(95, 196, 180, 0.34);
+
+  --warn:      #f0a06c;
+  --warn-soft: rgba(240, 160, 108, 0.14);
+  --warn-text: #f6b88f;
+  --warn-line: rgba(240, 160, 108, 0.38);
+
+  --risk:      #ff7f93;
+  --risk-soft: rgba(255, 127, 147, 0.14);
+  --risk-text: #ff9fae;
+  --risk-line: rgba(255, 127, 147, 0.38);
+
+  --info-soft: rgba(122, 128, 238, 0.12);
+  --info-text: #c1c5ff;
+
+  --accent-coral:  #ff9d80;
+  --accent-orange: var(--accent-coral);
+  --accent-teal:   #5fc4b4;
+  --accent-peach:  #ffc3a3;
+
+  /* White text on --brand needs the deeper end of the range in dark mode. */
+  --grad-brand: linear-gradient(135deg, #5f65d9 0%, #7479e6 100%);
+  --grad-hero:
+    linear-gradient(180deg, transparent 62%, var(--bg) 100%),
+    radial-gradient(760px 460px at 90% 0%, rgba(122, 128, 238, 0.26), transparent 62%),
+    radial-gradient(620px 420px at 0% 12%, rgba(255, 157, 128, 0.12), transparent 60%);
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.45);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.42);
+  --shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.55);
+  --ring: 0 0 0 3px rgba(146, 152, 255, 0.4);
+  --glow-brand: 0 6px 22px rgba(95, 101, 217, 0.42);
+
+  --scan: #8f95ff;
+  --scan-glow: rgba(143, 149, 255, 0.6);
+  /* The paper stays paper in dark mode: it is the focal object. */
+  --paper: #fffdf8;
+  --paper-line: #ece5d6;
+  --paper-ink: #1b2340;
+  --paper-hand: #2a3470;
+}
+
+/* Smooth theme switch: ThemeContext adds .theme-anim to <html> for a moment
+   so only the switch animates, not every hover for the rest of the session. */
+.theme-anim, .theme-anim *, .theme-anim *::before, .theme-anim *::after {
+  transition: background-color 320ms var(--ease), color 320ms var(--ease),
+              border-color 320ms var(--ease), box-shadow 320ms var(--ease),
+              fill 320ms var(--ease), stroke 320ms var(--ease) !important;
+}

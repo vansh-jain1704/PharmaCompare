@@ -1,0 +1,16 @@
+/* ==========================================================================
+   PharmaCompare styles. Each file has one job:
+     tokens      colour, type, space, motion - light and dark themes
+     base        reset, buttons, forms, badges, alerts, states
+     layout      header, tab bar, breadcrumbs, dialogs, footer
+     components  shared pieces: tables, rows, sections, findings, OCR, drawers
+     pages       landing, auth, dashboard, upload, history, explorer
+     analysis    the Prescription Analysis page (white + blue, scoped by a body class)
+   ========================================================================== */
+
+@import "./styles/tokens.css";
+@import "./styles/base.css";
+@import "./styles/layout.css";
+@import "./styles/components.css";
+@import "./styles/pages.css";
+@import "./styles/analysis.css";

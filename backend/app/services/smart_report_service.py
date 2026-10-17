@@ -1,0 +1,499 @@
+"""
+Smart Health Report - the final module in the PPT pipeline.
+
+Renders everything already computed for a prescription (OCR, Medicine
+Detection, the Clinical Decision Engine, Price Comparison and Generic
+Recommendation) into a single PDF the patient can keep or show to a
+pharmacist.
+
+This module computes NOTHING clinically new. It is a faithful presentation
+layer over results the other modules produced, which is what keeps it honest:
+if a medicine wasn't confidently identified, the report says so; if a price
+wasn't available, the report says so rather than estimating. The data-source
+and not-a-diagnosis disclaimers travel with the document, because a printed
+page outlives the screen it came from.
+
+It reads each line's status the same way the analysis page does (through
+medicine_safety_service.annotate), so the two cannot disagree about whether a
+line is matched, needs checking, or carries an allergy alert.
+"""
+import os
+import re
+from datetime import datetime
+from xml.sax.saxutils import escape as _xml_escape
+
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import mm
+from reportlab.pdfgen import canvas as rl_canvas
+from reportlab.platypus import (
+    CondPageBreak, KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
+)
+
+from app.config import Config
+from app.constants import DEMO_DISCLAIMER, PDF_FOOTER_NOTE
+from app.models.medicine_model import get_prescription_medicines
+from app.models.prescription_model import get_ocr_result_by_prescription
+from app.services.price_comparison_service import get_annotated_price_comparison
+from app.models.recommendation_model import get_recommendations
+from app.models.safety_model import get_analysis_summary, get_findings
+from app.models.user_model import get_user_allergies
+from app.services import medicine_safety_service
+from app.services.match_status import is_confirmed
+from app.services.release_type import RELEASE_LABELS
+
+ACCENT = colors.HexColor("#1a50b8")
+INK = colors.HexColor("#0f172a")
+MUTED = colors.HexColor("#64748b")
+LINE = colors.HexColor("#e2e8f0")
+ALERT_RED = colors.HexColor("#b91c1c")
+SUCCESS_GREEN = colors.HexColor("#047857")
+WARN_ORANGE = colors.HexColor("#c2410c")
+
+PAGE_MARGIN = 16 * mm
+CONTENT_WIDTH = A4[0] - 2 * PAGE_MARGIN  # 178 mm: every table is exactly this wide
+
+# The engine's internal severity codes, written the way a patient reads them.
+SEVERITY_LABELS = {
+    "Major": "Major",
+    "Moderate": "Moderate",
+    "Minor": "Minor",
+    "Unknown": "Unknown",
+    "NEEDS_VERIFICATION": "Not checked",
+}
+
+ISSUE_TYPE_LABELS = {
+    "interaction": "Drug interaction",
+    "duplicate": "Duplicate medicine",
+    "dosage_inconsistency": "Dosage inconsistency",
+    "allergy_check": "Allergy check",
+}
+
+DISCLAIMER = (
+    "PharmaCompare does not replace your doctor's prescription and does not diagnose. "
+    "Alternatives are listed for price comparison only - never change, stop or start a "
+    "medicine without confirming with your doctor or pharmacist."
+)
+PRICE_NOTE = (
+    f"{DEMO_DISCLAIMER} They may not reflect what any specific pharmacy charges today."
+)
+
+_FILE_LIKE = re.compile(r"\.(png|jpe?g|pdf)$", re.IGNORECASE)
+_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+
+def _is_printable(ch):
+    try:
+        ch.encode("cp1252")
+        return True
+    except UnicodeEncodeError:
+        return False
+
+
+def _esc(value):
+    """
+    Text that is safe to put inside a ReportLab Paragraph.
+
+    Paragraph parses its text as markup, so an OCR line such as "Tab X <5 days"
+    or "<i>" (unbalanced) made the whole report fail with a parse error, and a
+    bare "&" or "<" in any medicine name or finding did the same. Every
+    dynamic string goes through here before it is placed in a Paragraph.
+    """
+    text = _CONTROL_CHARS.sub("", "" if value is None else str(value)).replace("₹", "Rs ")
+    # The built-in PDF font covers Latin-1 / Windows-1252 only. Anything else
+    # (e.g. Devanagari or Chinese characters in an OCR line) would print as a
+    # black box, so it is shown as "?" instead.
+    text = "".join(ch if _is_printable(ch) else "?" for ch in text)
+    return _xml_escape(text)
+
+
+def _format_date(value):
+    if hasattr(value, "strftime"):
+        return f"{value.day} {value.strftime('%b %Y')}"
+    return str(value or "-")
+
+
+def prescription_title(prescription):
+    """
+    What the report calls the prescription. A name the user typed wins; a raw
+    upload filename (or nothing) is never the identity - it becomes
+    "Prescription - 5 Oct 2026", the same wording the app uses on screen.
+    """
+    name = (prescription.get("prescription_name") or "").strip()
+    if name and not _FILE_LIKE.search(name):
+        return name
+    uploaded = prescription.get("upload_date")
+    return f"Prescription — {_format_date(uploaded)}" if uploaded else "Prescription"
+
+
+class _NumberedCanvas(rl_canvas.Canvas):
+    """Canvas that can print "Page X of Y": the total is only known once every page exists."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._saved_pages = []
+
+    def showPage(self):
+        self._saved_pages.append(dict(self.__dict__))
+        self._startPage()
+
+    def save(self):
+        total = len(self._saved_pages)
+        for state in self._saved_pages:
+            self.__dict__.update(state)
+            self._draw_footer(total)
+            super().showPage()
+        super().save()
+
+    def _draw_footer(self, total):
+        self.saveState()
+        self.setFont("Helvetica", 7.5)
+        self.setFillColor(MUTED)
+        self.drawString(PAGE_MARGIN, 9 * mm, PDF_FOOTER_NOTE)
+        self.drawRightString(A4[0] - PAGE_MARGIN, 9 * mm, f"Page {self._pageNumber} of {total}")
+        self.restoreState()
+
+
+def _styles():
+    base = getSampleStyleSheet()
+    return {
+        "title": ParagraphStyle("t", parent=base["Title"], fontSize=20, textColor=INK, spaceAfter=2),
+        "subtitle": ParagraphStyle("st", parent=base["Normal"], fontSize=9, textColor=MUTED, alignment=TA_CENTER, spaceAfter=10),
+        "h2": ParagraphStyle("h2", parent=base["Heading2"], fontSize=12, textColor=ACCENT, spaceBefore=12, spaceAfter=5),
+        "body": ParagraphStyle("b", parent=base["Normal"], fontSize=9, textColor=INK, leading=13),
+        "small": ParagraphStyle("s", parent=base["Normal"], fontSize=7.5, textColor=MUTED, leading=10),
+        "cell": ParagraphStyle("c", parent=base["Normal"], fontSize=8, textColor=INK, leading=10.5),
+        "cellmuted": ParagraphStyle("cm", parent=base["Normal"], fontSize=7.5, textColor=MUTED, leading=10),
+        "cellwarn": ParagraphStyle("cw", parent=base["Normal"], fontSize=7.5, textColor=WARN_ORANGE, leading=10),
+        "cellalert": ParagraphStyle("ca", parent=base["Normal"], fontSize=7.5, textColor=ALERT_RED, leading=10),
+        "cellgood": ParagraphStyle("cg", parent=base["Normal"], fontSize=8, textColor=SUCCESS_GREEN, leading=10.5),
+    }
+
+
+def _heading(text, styles):
+    """
+    A section heading that is never stranded at the bottom of a page: if less than
+    ~45 mm is left, start a new page first. (keepWithNext was tried and rejected - it
+    glues the heading to the WHOLE following table, pushing a long table off page 1.)
+    """
+    return [CondPageBreak(45 * mm), Paragraph(text, styles["h2"])]
+
+
+def _rupees(value):
+    return f"Rs {float(value):.2f}" if value is not None else "-"
+
+
+def _table(data, widths, extra_styles=()):
+    table = Table(data, colWidths=widths, repeatRows=1, hAlign="LEFT")
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f1f5f9")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), INK),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, 0), 8),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("GRID", (0, 0), (-1, -1), 0.5, LINE),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        *extra_styles,
+    ]))
+    return table
+
+
+def _group_price_rows(price_rows):
+    """Turns the flat Price_Comparison rows into {pm_id: {prescribed, alternatives}}."""
+    grouped = {}
+    for row in price_rows:
+        entry = grouped.setdefault(row["pm_id"], {"prescribed": None, "alternatives": []})
+        if row["row_type"] == "prescribed":
+            entry["prescribed"] = row
+        else:
+            entry["alternatives"].append(row)
+    for entry in grouped.values():
+        entry["alternatives"].sort(key=lambda r: float(r["price"]))
+    return grouped
+
+
+def _status_for(pm, safety, identified):
+    """The same four words the analysis page uses in its Status column."""
+    if not identified:
+        return "Needs verification"
+    if pm["match_status"] == "user_confirmed":
+        return "Confirmed"
+    if safety["needs_disambiguation"] or safety["ocr_uncertain"]:
+        return "Check match"
+    return "Matched"
+
+
+def _confidence_text(pm, identified, safety=None):
+    if pm["match_status"] == "user_confirmed":
+        return "Confirmed by you"
+    if not identified and safety and safety.get("needs_disambiguation"):
+        # no single product was named, so there is no confidence to quote
+        return f"{len(safety['match_options'])} possible products"
+    confidence = pm.get("match_confidence")
+    if confidence is None:
+        return "No match found"
+    pct = round(float(confidence) * 100)
+    return f"{pct}% confidence" if identified else f"Closest guess: {pct}%"
+
+
+def _savings_for(identified, safety, entry):
+    """
+    (counts_toward_total, prescribed_price, alternative_row, saving, reason).
+
+    A line counts toward the savings total only when it is identified, has a
+    reliable reference price and a cheaper comparable alternative, is not
+    waiting on a "check match" decision (the product shown may not be the one
+    meant) and carries no allergy alert (we do not offer a substitute for a
+    medicine the patient reported an allergy to).
+    """
+    if not identified:
+        return False, None, None, None, "Not identified"
+    if safety.get("brand_unspecified"):
+        # The product on file is one of many with this composition: its price is not "the
+        # prescribed price", so no saving is claimed against it.
+        return False, None, None, None, "No brand named on the prescription"
+    prescribed = entry["prescribed"] if entry else None
+    price = float(prescribed["price"]) if prescribed and prescribed["price"] is not None else None
+    if price is None or price <= 0:
+        return False, None, None, None, "Price not available"
+    if safety["allergy_alert"]:
+        return False, price, None, None, "Not shown: allergy alert"
+    if prescribed.get("price_flag"):
+        return False, price, None, None, "Reference price looks unusual - not used for savings"
+    alternatives = entry["alternatives"] if entry else []
+    # The same eligibility the screen uses (price_quality.counts_for_savings): same pack
+    # quantity, real price, no extreme-price flag, live and cheaper.
+    comparable = [a for a in alternatives if a.get("counts_for_savings")]
+    if not comparable:
+        reason = "No cheaper same-pack match on file" if alternatives else "No cheaper match on file"
+        return False, price, None, None, reason
+    alt = min(comparable, key=lambda a: float(a["price"]))
+    saving = price - float(alt["price"])
+    if safety["needs_disambiguation"] or safety["ocr_uncertain"]:
+        return False, price, alt, saving, "Not counted: check match first"
+    return True, price, alt, saving, None
+
+
+def collect_report_data(prescription_id, prescription):
+    """
+    Gathers the stored results for one prescription and works out the
+    savings total. Every figure here already exists in the database - this
+    only selects and arranges it.
+    """
+    medicines = get_prescription_medicines(prescription_id)
+    prices = _group_price_rows(get_annotated_price_comparison(prescription_id))
+
+    # The patient's OWN saved allergies: the prescription's owner, not whoever
+    # happens to be calling.
+    owner_id = prescription.get("user_id")
+    allergies = get_user_allergies(owner_id) if owner_id is not None else []
+    ocr = get_ocr_result_by_prescription(prescription_id) or {}
+    safety = medicine_safety_service.annotate(medicines, allergies, ocr.get("line_results") or [])
+
+    lines = []
+    total_saving = 0.0
+    original_total = 0.0
+    counted = 0
+    for pm in medicines:
+        identified = bool(is_confirmed(pm["match_status"]) and pm["medicine_id"])
+        s = safety[pm["pm_id"]]
+        counts, price, alt, saving, reason = _savings_for(identified, s, prices.get(pm["pm_id"]))
+        if counts:
+            total_saving += saving
+            original_total += price
+            counted += 1
+        lines.append({
+            "pm": pm, "safety": s, "identified": identified,
+            "status": _status_for(pm, s, identified),
+            "confidence": _confidence_text(pm, identified, s),
+            "price": price, "alt": alt, "saving": saving if counts else None, "reason": reason,
+        })
+
+    needs_attention = sum(1 for ln in lines if ln["status"] in ("Needs verification", "Check match"))
+    return {
+        "prescription": prescription,
+        "title": prescription_title(prescription),
+        "lines": lines,
+        "medicines": medicines,
+        "prices": prices,
+        "analysis": get_analysis_summary(prescription_id),
+        "findings": get_findings(prescription_id),
+        "recommendations": get_recommendations(prescription_id),
+        "total_saving": round(total_saving, 2),
+        "original_total": round(original_total, 2),
+        "counted_for_savings": counted,
+        "detected": len(lines),
+        "settled": len(lines) - needs_attention,
+        "needs_attention": needs_attention,
+    }
+
+
+def _medicines_section(data, s):
+    rows = [["Medicine", "Strength / form", "Dosage / frequency", "Match", "Status"]]
+    for ln in data["lines"]:
+        pm, sf = ln["pm"], ln["safety"]
+        if ln["identified"]:
+            cell = [Paragraph(f"<b>{_esc(pm['medicine_name'])}</b>", s["cell"])]
+            raw = (pm["raw_text"] or "").strip()
+            if raw and raw != pm["medicine_name"]:
+                cell.append(Paragraph(f"Read as “{_esc(raw)}”", s["cellmuted"]))
+            if pm.get("composition"):
+                cell.append(Paragraph(f"Contains: {_esc(pm['composition'])}", s["cellmuted"]))
+            if sf["brand_unspecified"]:
+                cell.append(Paragraph("Generic name written: any brand with this composition fits.", s["cellmuted"]))
+        else:
+            cell = [
+                Paragraph(f"<b>{_esc(pm['raw_text'] or '-')}</b>", s["cell"]),
+                Paragraph("Not confirmed - verify against the original prescription.", s["cellmuted"]),
+            ]
+            if sf["needs_disambiguation"]:
+                if sf["verification_reason"]:
+                    cell.append(Paragraph(_esc(sf["verification_reason"][0].upper() + sf["verification_reason"][1:] + "."), s["cellwarn"]))
+                shown = [" ".join(x for x in (o.get("strength"), o.get("form")) if x) for o in sf["match_options"]]
+                cell.append(Paragraph("Possible: " + _esc("; ".join(x for x in shown if x)), s["cellmuted"]))
+        if sf["allergy_alert"]:
+            cell.append(Paragraph(f"Allergy alert: {_esc(sf['allergy_alert_text'])}", s["cellalert"]))
+        elif ln["identified"] and sf["verification_status"] == "flagged_for_review":
+            cell.append(Paragraph(_esc(sf["verification_label"]), s["cellwarn"]))
+
+        if ln["identified"]:
+            strength_form = " ".join(x for x in (pm["strength"], pm["form"]) if x) or "-"
+            release = pm.get("release_type")
+            if release:
+                strength_form += f" ({RELEASE_LABELS.get(release, 'modified release')})"
+        else:
+            strength_form = "-"
+
+        instructions = " · ".join(
+            p for p in (pm["dosage"], pm["frequency"], f"for {pm['duration']}" if pm["duration"] else None) if p
+        ) or "Not specified"
+
+        status_style = s["cellgood"] if ln["status"] in ("Matched", "Confirmed") else s["cellwarn"]
+        rows.append([
+            cell,
+            Paragraph(_esc(strength_form), s["cell"]),
+            Paragraph(_esc(instructions), s["cell"]),
+            Paragraph(_esc(ln["confidence"]), s["cell"]),
+            Paragraph(f"<b>{_esc(ln['status'])}</b>", status_style),
+        ])
+    return _table(rows, [56 * mm, 28 * mm, 38 * mm, 28 * mm, 28 * mm])
+
+
+def _safety_section(data, s):
+    flow = []
+    analysis = data["analysis"]
+    if analysis and analysis.get("summary"):
+        flow.append(Paragraph(_esc(analysis["summary"]), s["body"]))
+        flow.append(Spacer(1, 5))
+
+    if not data["findings"]:
+        flow.append(Paragraph("No drug-interaction findings were recorded for this prescription.", s["body"]))
+        return flow
+
+    rows = [["Type", "Severity", "Medicines", "What it means"]]
+    for f in data["findings"]:
+        involved = f.get("medicines_involved") or []
+        names = " + ".join(m["medicine_name"] for m in involved) if involved else "-"
+        issue_type = f["issue_type"] or ""
+        rows.append([
+            Paragraph(_esc(ISSUE_TYPE_LABELS.get(issue_type, issue_type.replace("_", " ").title())), s["cell"]),
+            Paragraph(_esc(SEVERITY_LABELS.get(f["severity"], f["severity"] or "-")), s["cell"]),
+            Paragraph(_esc(names), s["cell"]),
+            Paragraph(_esc(f["explanation"] or "-"), s["cell"]),
+        ])
+    flow.append(_table(rows, [26 * mm, 20 * mm, 46 * mm, 86 * mm]))
+    return flow
+
+
+def _savings_section(data, s):
+    flow = []
+    if data["total_saving"] > 0:
+        pct = (data["total_saving"] / data["original_total"] * 100) if data["original_total"] else 0
+        flow.append(Paragraph(
+            f"<b>Switching to the cheapest comparable alternative could save "
+            f"{_rupees(data['total_saving'])} ({pct:.0f}% lower) across {data['counted_for_savings']} of "
+            f"{data['detected']} medicine{'s' if data['detected'] != 1 else ''}.</b>",
+            ParagraphStyle("sv", parent=s["body"], textColor=SUCCESS_GREEN, fontSize=10),
+        ))
+        flow.append(Paragraph(
+            "Only medicines that are identified, have a reliable reference price, have a cheaper product with the same "
+            "ingredients, strength and form, and are not waiting on a match check or an allergy alert are counted.",
+            s["small"],
+        ))
+        flow.append(Spacer(1, 5))
+    else:
+        flow.append(Paragraph("No saving could be counted for this prescription.", s["body"]))
+        flow.append(Spacer(1, 4))
+
+    # One row for EVERY medicine: a line without a price or alternative says why,
+    # instead of silently disappearing from the table.
+    rows = [["Prescribed", "Reference price", "Cheapest comparable alternative", "Alt. price", "You could save"]]
+    for ln in data["lines"]:
+        pm = ln["pm"]
+        name = pm["medicine_name"] if ln["identified"] else (pm["raw_text"] or "-")
+        alt = ln["alt"]
+        if ln["saving"] is not None:
+            save_cell = Paragraph(_esc(_rupees(ln["saving"])), s["cellgood"])
+        else:
+            save_cell = Paragraph(_esc(ln["reason"] or "-"), s["cellmuted"])
+        rows.append([
+            Paragraph(_esc(name), s["cell"]),
+            Paragraph(_esc(_rupees(ln["price"])), s["cell"]),
+            Paragraph(_esc(alt["medicine_name"]) if alt and ln["reason"] != "Not shown: allergy alert" else "-", s["cell"]),
+            Paragraph(_esc(_rupees(alt["price"])) if alt and ln["reason"] != "Not shown: allergy alert" else "-", s["cell"]),
+            save_cell,
+        ])
+    flow.append(_table(rows, [46 * mm, 24 * mm, 52 * mm, 20 * mm, 36 * mm]))
+    flow.append(Spacer(1, 4))
+    flow.append(Paragraph(_esc(PRICE_NOTE), s["small"]))
+    return flow
+
+
+def build_report_pdf(prescription_id, prescription, output_path):
+    """Renders the report to output_path and returns that path."""
+    data = collect_report_data(prescription_id, prescription)
+    s = _styles()
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    doc = SimpleDocTemplate(
+        output_path, pagesize=A4,
+        leftMargin=PAGE_MARGIN, rightMargin=PAGE_MARGIN, topMargin=PAGE_MARGIN, bottomMargin=18 * mm,
+        title="PharmaCompare Smart Health Report",
+    )
+
+    summary = f"{data['detected']} detected · {data['settled']} matched or confirmed · {data['needs_attention']} need checking"
+    flow = [
+        Paragraph("Smart Health Report", s["title"]),
+        Paragraph("Generated by PharmaCompare", s["subtitle"]),
+        _table(
+            [[Paragraph("<b>Prescription</b>", s["cell"]), Paragraph(_esc(data["title"]), s["cell"]),
+              Paragraph("<b>Uploaded</b>", s["cell"]), Paragraph(_esc(_format_date(prescription.get("upload_date"))), s["cell"])],
+             [Paragraph("<b>Medicines</b>", s["cell"]), Paragraph(_esc(summary), s["cell"]),
+              Paragraph("<b>Report generated</b>", s["cell"]), Paragraph(datetime.now().strftime("%d %b %Y, %I:%M %p"), s["cell"])]],
+            [28 * mm, 64 * mm, 32 * mm, 54 * mm],
+        ),
+        *_heading("Doctor prescribed medicines", s),
+        _medicines_section(data, s),
+        *_heading("Safety check", s),
+        *_safety_section(data, s),
+        *_heading("Price comparison &amp; possible savings", s),
+        *_savings_section(data, s),
+        Spacer(1, 14),
+    ]
+    flow.append(KeepTogether([
+        _table([[Paragraph(f"<b>Important:</b> {_esc(DISCLAIMER)}", s["small"])]], [CONTENT_WIDTH],
+               extra_styles=[("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#fffbeb"))]),
+    ]))
+
+    doc.build(flow, canvasmaker=_NumberedCanvas)
+    return output_path
+
+
+def report_path_for(prescription_id, user_id):
+    return os.path.join(Config.UPLOAD_FOLDER, "reports", str(user_id),
+                        f"smart_report_{prescription_id}.pdf")
