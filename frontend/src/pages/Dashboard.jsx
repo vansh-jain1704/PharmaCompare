@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { AlertCircle, ArrowRight, CheckCircle2, FileText, History, Lightbulb, Pill, ScanSearch, Search, Wallet } from "lucide-react";
+import { AlertCircle, ArrowRight, CheckCircle2, FileText, History, Lightbulb, MapPin, Pill, ScanSearch, Search, Wallet } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import Page from "../components/Page";
 import { listPrescriptions } from "../api/prescriptionApi";
@@ -11,6 +11,7 @@ import { formatDate, prescriptionTitle, rupees } from "../utils/format";
 const ACTIONS = [
   { to: "/upload", icon: ScanSearch, title: "Analyze Prescription", text: "Upload a photo or PDF and get a full medicine report.", tone: "purple", primary: true },
   { to: "/search", icon: Search, title: "Search Medicines", text: "Look up any brand or salt: price, maker, alternatives.", tone: "teal" },
+  { to: "/stores", icon: MapPin, title: "Find Stores Near Me", text: "Medical stores and Jan Aushadhi Kendras near you, on a map.", tone: "purple" },
   { to: "/prescriptions", icon: History, title: "View History", text: "Every analysis you have run, with its savings.", tone: "orange" },
 ];
 

@@ -1,6 +1,7 @@
 import json
 
 from app.db import get_connection
+from app.models import verification_log_model
 
 
 def create_prescription(user_id, image_path, prescription_name=None, prescription_type=None,
@@ -53,6 +54,9 @@ def delete_prescription(prescription_id):
     conn = get_connection()
     cursor = conn.cursor()
     try:
+        # the review trail of this prescription's medicine verifications goes with it (System_Logs has no
+        # foreign key to a prescription, so it would otherwise outlive it)
+        verification_log_model.delete_decisions(prescription_id, cursor)
         cursor.execute("DELETE FROM Prescriptions WHERE prescription_id = %s", (prescription_id,))
         conn.commit()
         return cursor.rowcount > 0

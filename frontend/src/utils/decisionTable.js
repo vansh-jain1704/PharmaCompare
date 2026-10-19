@@ -51,6 +51,7 @@ export const VERIFICATION_TONE = {
   verified_by_user: "ok",
   pending_verification: "warn",
   flagged_for_review: "risk",
+  marked_unidentified: "muted",
 };
 
 // Short badge text for the table row; the backend's full sentence stays
@@ -97,23 +98,81 @@ function buildSafety(raw, item) {
     allergyAlertText: raw.allergy_alert_text || null,
     needsDisambiguation: !!raw.needs_disambiguation,
     matchOptions: Array.isArray(raw.match_options) ? raw.match_options : [],
+    // What the person needs in order to review an unsettled line: the look-alike products the matcher found
+    // (never confirmed), every plain-language reason the line is unsettled, and what they decided before.
+    closestGuesses: Array.isArray(raw.closest_guesses) ? raw.closest_guesses : [],
+    verificationReasons: Array.isArray(raw.verification_reasons) ? raw.verification_reasons : [],
+    userUnmatched: !!raw.user_unmatched || item.status === "user_unmatched",
+    // A closest guess whose name is the very name written on the line (strength, form and the reading still need a person), and a
+    // medicine the person typed in themselves for a line the dataset cannot identify. Neither is ever priced or safety-checked.
+    suggested: !!raw.suggested,
+    suggestion: raw.suggestion || null,
+    userEntered: raw.user_entered || null,
+    verificationDecision: raw.verification_decision || null,
+    ocrLineConfidence: raw.ocr_confidence ?? null,
     // Why several products fit, and whether the line names only ingredients (so the
     // product shown is one example of many). Both derived by the backend.
     verificationReason: raw.verification_reason || null,
     // The OCR itself was unsure of this line, so the match is never shown as settled.
     ocrUncertain: !!raw.ocr_uncertain,
+    // The line says one dosage form and the matched product is another: matched, but not presented as settled.
+    formConflict: !!raw.form_conflict,
+    // matched, but only on an assumption the person should look at (a form conflict, or digits read as a schedule not a strength)
+    readAssumption: raw.read_assumption || null,
+    needsCheck: raw.needs_check ?? !!raw.form_conflict,
+    // every ingredient with its strength ("Domperidone 30mg + Pantoprazole 40mg"), from the composition
+    displayStrength: raw.display_strength || null,
+    // what pharmacies have reported for this medicine (price, stock, when, which feed): null for a line that is not identified
+    offers: raw.offers || null,
+    // how the alternatives were chosen, what is not compared, and whether they are information only for this line
+    alternativesNotes: raw.alternatives_notes || null,
+    // what the prescription says about dosing: { text, schedule, schedule_certainty, duration, dose, timing, sources, ... }
+    instructions: raw.instructions || null,
+    // The person confirmed a product that conflicts with the line: the decision stands, the saving is not counted.
+    confirmedWithConflicts: !!raw.confirmed_with_conflicts,
+    confirmationConflicts: Array.isArray(raw.confirmation_conflicts) ? raw.confirmation_conflicts : [],
+    verificationHistory: Array.isArray(raw.verification_history) ? raw.verification_history : [],
     brandUnspecified: !!raw.brand_unspecified,
+    // missing or inconsistent data on the product itself, from the server's own check of its fields (a reason to check, not a correction)
+    dataNotes: Array.isArray(raw.data_notes) ? raw.data_notes : [],
     releaseLabel: raw.release_label || null,
   };
 }
 
 function buildWhyReason(item, safety) {
+  if (!item.medicine && safety?.userEntered) {
+    return (
+      `You entered "${safety.userEntered.name}" yourself for the line "${item.raw_text}". It is not matched to the dataset, so no price, ` +
+      "saving, alternative or medicine-specific safety check is shown for it. You can enter different details or choose a product at any time."
+    );
+  }
+  if (!item.medicine && safety?.suggested) {
+    return (
+      `The name on the line, "${item.raw_text}", is the name of ${safety.suggestion.medicine_name}, so that is our suggestion. It is not confirmed: ` +
+      `${(safety.verificationReasons || []).join(" ")} Check it against the original prescription, then confirm it or enter the details yourself.`
+    ).replace(/\s+/g, " ");
+  }
+  if (!item.medicine && safety?.userUnmatched) {
+    return (
+      `You reviewed "${item.raw_text}" and marked it as not identified. It is kept as read from the prescription, ` +
+      "but it is not part of the safety, price or savings checks. You can review it again at any time."
+    );
+  }
   if (!item.medicine && safety?.needsDisambiguation && safety.matchOptions.length > 1) {
     const reason = safety.verificationReason ? `${safety.verificationReason[0].toUpperCase()}${safety.verificationReason.slice(1)}.` : "";
     return `${reason} We have not picked one for you - choose the product that matches your prescription.`.trim();
   }
+  if (safety?.closestGuesses?.length > 0 && !isConfirmedStatus(item.status)) {
+    return (
+      `"${item.raw_text}" could not be matched with enough certainty to accept automatically. ` +
+      `${(safety.verificationReasons || []).join(" ")} ` +
+      "The products below are look-alikes, not confirmed matches: confirm one only if it is what your prescription says, " +
+      "or mark the line as not identified."
+    ).replace(/\s+/g, " ");
+  }
   if (!item.medicine) {
-    return `No medicine in our database matched "${item.raw_text}". This text could not be identified.`;
+    const reasons = (safety?.verificationReasons || []).join(" ");
+    return `No medicine in our database matched "${item.raw_text}". This text could not be identified. ${reasons}`.trim();
   }
   const confidencePct = item.confidence != null ? Math.round(item.confidence * 100) : null;
   if (!isConfirmedStatus(item.status)) {
@@ -121,6 +180,15 @@ function buildWhyReason(item, safety) {
       `This is our closest guess - "${item.medicine.medicine_name}" - but the match confidence` +
       (confidencePct != null ? ` (${confidencePct}%)` : "") +
       ` was too low to confirm automatically. Please verify this against the original prescription.`
+    );
+  }
+  if (item.status === "user_confirmed") {
+    const shown = safety?.verificationDecision?.warnings_acknowledged
+      ? " You were shown differences between the prescription line and this product before you confirmed."
+      : "";
+    return (
+      `You chose ${item.medicine.medicine_name} for the line "${item.raw_text}".${shown} ` +
+      "This is your decision: PharmaCompare has not verified that the product is the one written on the prescription."
     );
   }
   const lowOcr = safety?.ocrUncertain
@@ -163,15 +231,25 @@ function buildPmIdResolver(priceItems) {
  * compare it with the backend's wording.)
  */
 export function rowStatus(row) {
-  if (!row.doctorMedicine) return { tone: "warn", text: "Needs verification" };
+  if (row.userUnmatched) return row.userEntered ? { tone: "muted", text: "Entered by you" } : { tone: "muted", text: "Not identified (by you)" };
+  if (!row.doctorMedicine) return row.suggested ? { tone: "warn", text: "Suggested" } : { tone: "warn", text: "Needs verification" };
   if (row.status === "user_confirmed") return { tone: "ok", text: "Confirmed" };
-  if (row.needsDisambiguation || row.ocrUncertain) return { tone: "warn", text: "Check match" };
+  if (row.needsDisambiguation || row.ocrUncertain || row.needsCheck) return { tone: "warn", text: "Check match" };
   return { tone: "ok", text: "Matched" };
 }
+
+/**
+ * What the percentage shown beside a line means. It is how closely the text read from the prescription resembles a product in the
+ * dataset - not the chance that the match is right, and not a clinical measure. Only a person's confirmation settles a line.
+ */
+export const CONFIDENCE_EXPLANATION =
+  "The percentage is how closely the text we read resembles this product in our dataset. It is not the chance that the match is right, " +
+  "and a high score never replaces checking the name and strength against your prescription.";
 
 /** Under the status pill: the matcher's real score, or who confirmed the line. */
 export function confidenceText(row) {
   if (row.status === "user_confirmed") return "Confirmed by you";
+  if (row.userUnmatched) return row.userEntered ? "Entered by you" : "Marked by you";
   // No single product was named: there is no confidence to quote.
   if (!row.doctorMedicine && row.needsDisambiguation) return `${row.matchOptions.length} possible products`;
   if (row.confidence == null) return "No match found";
@@ -193,7 +271,7 @@ export function summarizeSavings(rows) {
   // Same rule as the PDF report: a line with an allergy alert, or one still waiting on a
   // "check match" decision, is never added to the total, so screen and PDF cannot disagree.
   const savable = rows.filter(
-    (r) => r.savingAmount != null && r.savingAmount > 0 && !r.allergyAlert && !r.needsDisambiguation && !r.ocrUncertain,
+    (r) => r.savingAmount != null && r.savingAmount > 0 && !r.allergyAlert && !r.needsDisambiguation && !r.ocrUncertain && !r.needsCheck && !r.confirmedWithConflicts,
   );
   const totalSaving = savable.reduce((sum, r) => sum + r.savingAmount, 0);
   const originalTotal = savable.reduce((sum, r) => sum + (r.prescribedPrice || 0), 0);
@@ -285,9 +363,9 @@ export function buildDecisionRows(detail) {
       confidence: item.confidence,
       doctorMedicine: confirmed,
       guessedMedicine: isConfirmedStatus(item.status) ? null : item.medicine,
-      medicineLabel: confirmed ? confirmed.medicine_name : item.raw_text,
-      strength: confirmed?.strength || null,
-      form: confirmed?.form || null,
+      medicineLabel: confirmed ? confirmed.medicine_name : safety.userEntered?.name || item.raw_text,
+      strength: safety.displayStrength || confirmed?.strength || safety.userEntered?.strength || null,
+      form: confirmed?.form || safety.userEntered?.form || null,
       // The backend now parses these off the printed line. deriveFrequency
       // is the fallback for prescriptions processed before it did.
       dosage: raw.dosage || null,
@@ -301,6 +379,8 @@ export function buildDecisionRows(detail) {
       priceFlag,
       priceNote,
       priceDate: priceEntry?.reference_price?.price_date || null,
+      // where this price came from and how old that snapshot is (never live), as the server stated it
+      priceBasis: priceEntry?.reference_price?.price_basis || null,
       savingAmount,
       savingPercent,
       availability,

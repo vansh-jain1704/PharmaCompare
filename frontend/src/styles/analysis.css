@@ -144,6 +144,7 @@ body.theme-analysis .page-head-row { align-items: flex-start; }
 .pa-pill.is-ok { background: var(--ok-soft); color: var(--ok-text); }
 .pa-pill.is-warn { background: var(--warn-soft); color: var(--warn-text); }
 .pa-pill.is-risk { background: var(--risk-soft); color: var(--risk-text); margin-top: 0.3rem; }
+.pa-pill.is-muted { background: var(--surface-sunk); color: var(--text-muted); }
 .pa-row.is-attn .pa-pill.is-warn { background: color-mix(in srgb, var(--warn) 18%, var(--surface)); }
 
 .pa-save { display: block; padding: 0.5rem 0.6rem; border-radius: var(--r-xs); background: var(--surface-sunk); text-align: center; line-height: 1.3; }
@@ -219,3 +220,12 @@ body.theme-analysis .page-head-row { align-items: flex-start; }
 
 /* an alternative whose price the backend flagged as extreme - listed, never counted as a saving */
 .alts .warn-text { color: var(--warn-text); display: block; }
+
+/* Medicine Timeline */
+.tl-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--s-3); margin-bottom: var(--s-3); }
+.tl-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--s-3) var(--s-4); }
+.tl-card.is-group { background: var(--surface-sunk); }
+.tl-card h3 { margin: 0 0 var(--s-2); font-family: var(--font-body); font-size: var(--t-sm); font-weight: 700; color: var(--text); }
+.tl-card ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-3); }
+.tl-card li { display: flex; flex-direction: column; gap: 0.15rem; font-size: var(--t-sm); }
+.tl-card li .tl-detail { font-size: var(--t-xs); color: var(--text-muted); }

@@ -8,6 +8,7 @@ export const MATCH_STATUS_META = {
   matched: { label: "Identified", className: "badge-success" },
   user_confirmed: { label: "Confirmed by you", className: "badge-success" },
   needs_verification: { label: "Needs verification", className: "badge-warning" },
+  user_unmatched: { label: "Not identified (by you)", className: "badge-muted" },
 };
 
 // A line is settled either because the matcher was confident or because the
@@ -40,6 +41,8 @@ export function normalizeDetectedMedicine(row) {
           secondary_salt: row.secondary_salt,
           pack_size: row.pack_size,
           release_type: row.release_type ?? null,
+          // a partial ingredient list is never a basis for searching the product (see utils/buyGeneric.js)
+          composition_incomplete: !!row.composition_incomplete,
           price: row.price != null ? parseFloat(row.price) : null,
           is_discontinued: !!row.is_discontinued,
         }
@@ -105,6 +108,7 @@ export function normalizePriceComparison(rows) {
         price_flag_note: row.price_flag_note ?? null,
         data_source: row.data_source,
         price_date: row.price_date,
+        price_basis: row.price_basis ?? null,
       };
     } else {
       entry.alternatives.push({
@@ -126,6 +130,7 @@ export function normalizePriceComparison(rows) {
         counts_for_savings: !!row.counts_for_savings,
         is_discontinued: !!row.is_discontinued,
         data_source: row.data_source,
+        price_basis: row.price_basis ?? null,
       });
     }
   });

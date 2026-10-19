@@ -26,6 +26,10 @@ LINES = [
     "Tab Telma 40",              # strips of 30: different-pack alternatives are not savings
     "Nifedipine 30",             # unsupported strength: unidentified, no candidates
     "Augmentin",                 # brand with several strengths/forms: candidates
+    "Cap Omez 20",               # matched to a tablet although the line says capsule: "Check match"
+    "T Lincont 100",             # only look-alikes; the person then confirms Zincold Syrup despite the differences
+    "T Linogen XT",              # only look-alikes; the person then marks it "not identified"
+    "Tab Zincovit",              # only look-alikes, left for the person to review
 ]
 
 
@@ -48,6 +52,22 @@ def main():
             _run_medicine_detection(pid, [{"text": t} for t in LINES])
             _rerun_analysis(pid)
             headers = {"Authorization": f"Bearer {create_access_token(identity=str(uid))}"}
+            # the person's decisions, made through the real routes (so the review trail and the re-analysis are real too)
+            from app.models.medicine_model import get_prescription_medicines
+            client = app.test_client()
+            by_text = {m["raw_text"]: m["pm_id"] for m in get_prescription_medicines(pid)}
+            from app.db import get_connection
+            conn = get_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT medicine_id FROM Medicines WHERE medicine_name = 'Zincold Syrup' LIMIT 1")
+            zincold = cur.fetchone()[0]
+            cur.close()
+            conn.close()
+            r = client.patch(f"/api/prescriptions/{pid}/medicines/{by_text['T Lincont 100']}",
+                             json={"medicine_id": zincold, "acknowledge_warnings": True}, headers=headers)
+            assert r.status_code == 200, r.get_json()
+            r = client.post(f"/api/prescriptions/{pid}/medicines/{by_text['T Linogen XT']}/unmatched", headers=headers)
+            assert r.status_code == 200, r.get_json()
             detail = app.test_client().get(f"/api/prescriptions/{pid}", headers=headers).get_json()
             data = collect_report_data(pid, get_prescription_by_id(pid))
             fixture = {
@@ -64,6 +84,9 @@ def main():
                             "price": ln["price"],
                             "allergy_alert": ln["safety"]["allergy_alert"],
                             "ocr_uncertain": ln["safety"]["ocr_uncertain"],
+                            "form_conflict": ln["safety"]["form_conflict"],
+                            "confirmed_with_conflicts": ln["safety"]["confirmed_with_conflicts"],
+                            "reason": ln["reason"],
                             "release_label": ln["safety"]["release_label"],
                             "brand_unspecified": ln["safety"]["brand_unspecified"],
                             "composition": ln["pm"].get("composition"),

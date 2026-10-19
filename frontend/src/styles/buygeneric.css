@@ -1,0 +1,29 @@
+/* Buy Generic: a small control beside a medicine's name */
+
+.buy-generic-wrap { position: relative; display: inline-block; }
+.buy-generic {
+  display: inline-flex; align-items: center; gap: 0.3rem; margin-left: 0.5rem; padding: 0.15rem 0.6rem;
+  font: inherit; font-size: var(--t-xs); font-weight: 650; line-height: 1.5; white-space: nowrap; text-decoration: none; cursor: pointer;
+  color: var(--brand-text); background: var(--surface); border: 1px solid var(--brand-line); border-radius: var(--r-full);
+}
+.buy-generic:hover, .buy-generic:focus-visible { background: var(--brand-softer); }
+.buy-generic.is-unverified { color: var(--text-muted); border-style: dashed; }
+
+.buy-generic-note {
+  display: block; margin-top: 0.35rem; padding: 0.55rem 0.75rem; max-width: 22rem; white-space: normal;
+  font-size: var(--t-xs); font-weight: 500; line-height: 1.45; color: var(--warn-text); background: var(--warn-soft);
+  border: 1px solid var(--warn-line); border-radius: var(--r-md);
+}
+.buy-generic-note .link-btn { margin-left: 0.4rem; }
+.buy-generic-note.is-floating { position: absolute; right: 0; top: 100%; z-index: 6; width: min(17rem, 80vw); box-shadow: var(--shadow-md); }
+
+/* in a search result card: the control sits at the card's top right, beside the name */
+.med-card-wrap { position: relative; display: flex; }
+.med-card-wrap > .med-card { flex: 1; min-width: 0; }
+.med-card-wrap .med-card-top { padding-right: 7.5rem; }
+.med-card-wrap:hover { transform: translateY(-3px); }
+.med-card-wrap > .med-card:hover { transform: none; }
+.med-card-buy { position: absolute; top: var(--s-4); right: var(--s-4); z-index: 2; }
+.med-card-buy .buy-generic { margin-left: 0; }
+
+.buy-generic-explained { margin: var(--s-2) 0 0; }

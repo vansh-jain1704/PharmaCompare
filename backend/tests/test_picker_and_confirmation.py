@@ -300,7 +300,11 @@ class Routes(unittest.TestCase):
         return self.client.patch(f"/api/prescriptions/{pid}/medicines/{pm}", json=body, headers=headers or self.h)
 
     def test_confirming_saves_exactly_the_chosen_medicine_and_clears_the_guess(self):
-        r = self.patch(self.pid, self.pm, {"medicine_id": self.dolo})
+        # the line says "T. pan - D 100": Dolo 650 clearly conflicts with it, so it is held until acknowledged
+        held = self.patch(self.pid, self.pm, {"medicine_id": self.dolo})
+        self.assertEqual(held.status_code, 409)
+        self.assertEqual(self.pm_row(self.pm)["match_status"], "needs_verification")
+        r = self.patch(self.pid, self.pm, {"medicine_id": self.dolo, "acknowledge_warnings": True})
         self.assertEqual(r.status_code, 200)
         saved = self.pm_row(self.pm)
         self.assertEqual(saved["medicine_id"], self.dolo)
@@ -314,8 +318,9 @@ class Routes(unittest.TestCase):
             rows = get_annotated_price_comparison(self.pid)
         self.assertTrue(any(x["row_type"] == "prescribed" and x["pm_id"] == self.pm and x["medicine_id"] == self.dolo for x in rows))
         # confirming again, or changing the answer, works
-        self.assertEqual(self.patch(self.pid, self.pm, {"medicine_id": self.dolo}).status_code, 200)
-        self.assertEqual(self.patch(self.pid, self.pm, {"medicine_id": self.telma}).status_code, 200)
+        ack = lambda mid: {"medicine_id": mid, "acknowledge_warnings": True}
+        self.assertEqual(self.patch(self.pid, self.pm, ack(self.dolo)).status_code, 200)
+        self.assertEqual(self.patch(self.pid, self.pm, ack(self.telma)).status_code, 200)
         self.assertEqual(self.pm_row(self.pm)["medicine_id"], self.telma)
 
     def test_bad_ids_are_rejected_and_nothing_is_saved(self):

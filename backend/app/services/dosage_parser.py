@@ -87,5 +87,19 @@ def parse_dosage(text):
 
 
 def parse_instructions(text):
-    """Returns (dosage, frequency, duration) - any of which may be None."""
-    return parse_dosage(text), parse_frequency(text), parse_duration(text)
+    """
+    Returns (dosage, frequency, duration) - any of which may be None. The patterns above read the plain-English forms;
+    what they cannot read ("1-0-1", "x30dys", "X - 7 dys") is read by instruction_service, which also says so when a
+    reading is only possible (digits that merely look like a schedule are returned as "Possibly 1-0-0 ...").
+    """
+    from app.services import instruction_service
+
+    parsed = instruction_service.parse(text)
+    dosage, frequency, duration = parse_dosage(text), parse_frequency(text), parse_duration(text)
+    if frequency is None or (parsed["schedule"] and parsed["schedule_certainty"] == "written"):
+        frequency = instruction_service.describe_schedule(parsed, short=True) or frequency
+    if duration is None:
+        duration = parsed["duration"]
+    if dosage is None and parsed["dose"]:
+        dosage = parsed["dose"] + (f", {parsed['timing']}" if parsed["timing"] else "")
+    return dosage, frequency, duration

@@ -37,6 +37,21 @@ def create_app():
     from app.routes.generic_recommendation import generic_recommendation_bp
     app.register_blueprint(generic_recommendation_bp)
 
+    from app.routes.offers import offers_bp
+    app.register_blueprint(offers_bp)
+
+    from app.routes.data_sources import data_sources_bp
+    app.register_blueprint(data_sources_bp)
+
+    from app.routes.scan import scan_bp
+    app.register_blueprint(scan_bp)
+
+    from app.routes.stores import stores_bp
+    app.register_blueprint(stores_bp)
+
+    from app.routes.feeds import feeds_bp
+    app.register_blueprint(feeds_bp)
+
     @app.errorhandler(413)
     def file_too_large(_e):
         return jsonify({"error": f"file exceeds the {Config.MAX_UPLOAD_MB}MB upload limit"}), 413

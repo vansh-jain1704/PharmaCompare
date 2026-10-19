@@ -6,6 +6,11 @@ import { getErrorMessage } from "../api/getErrorMessage";
 import Page from "../components/Page";
 import MedicineTable, { MedicineTableSkeleton } from "../components/results/MedicineTable";
 import SummaryPanel from "../components/results/SummaryPanel";
+import MedicineTimeline from "../components/results/MedicineTimeline";
+import PhotoQualityNotes from "../components/PhotoQualityNotes";
+import ReportSummary from "../components/results/ReportSummary";
+import StatusLegend from "../components/results/StatusLegend";
+import PrescriptionNotes, { AllergyNotice } from "../components/results/PrescriptionNotes";
 import Disclosure from "../components/results/Disclosure";
 import useReportDownload from "../components/results/useReportDownload";
 import ClinicalFindingsView from "../components/ClinicalFindingsView";
@@ -110,11 +115,23 @@ export default function PrescriptionReport() {
         <div className="pa">
           <SummaryPanel summary={summary} totalCount={summary.detected} />
           <p className="pa-notice">{DEMO_DISCLAIMER}</p>
+          <PhotoQualityNotes quality={detail.image_quality} showOk />
+          <ReportSummary prescriptionId={prescriptionId} />
 
           <section className="pa-section" aria-labelledby="pa-meds">
             <h2 id="pa-meds">Detected Medicines</h2>
             <p className="pa-sub">Here are the medicines found in your prescription.</p>
+            <StatusLegend />
             <MedicineTable detail={detail} prescriptionId={prescriptionId} onCorrected={() => load({ quiet: true })} />
+          </section>
+
+          <PrescriptionNotes notes={detail.notes} />
+          <AllergyNotice check={detail.allergy_check} />
+
+          <section className="pa-section" aria-labelledby="pa-timeline">
+            <h2 id="pa-timeline">Medicine Timeline</h2>
+            <p className="pa-sub">When each identified medicine is taken, as the prescription wrote it.</p>
+            <MedicineTimeline timeline={detail.timeline} />
           </section>
 
           <section className="pa-more" aria-label="Supporting detail">

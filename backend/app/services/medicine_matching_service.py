@@ -43,6 +43,8 @@ import re
 from difflib import SequenceMatcher
 
 from app.models.medicine_model import search_candidates, search_by_name_prefix, get_family_variants
+from app.services import instruction_service
+from app.services.display_rounding import percent
 from app.services.composition import (
     canonical_number, composition_key, has_unknown_strength, ingredient_numerators, split_ingredients,
 )
@@ -108,8 +110,9 @@ SEPARATOR_RE = re.compile(r"[^a-z0-9]+")
 LIST_MARKER_RE = re.compile(r"^\s*\d{1,2}\s*[.)]\s*")
 # Course length: "x 5 days", "x 5 d", "for 7 days". A time unit is required,
 # so a strength like the 650 in "Dolo 650" is never mistaken for a duration.
+# OCR often returns the multiplication sign for a handwritten or typed "x" ("x 10 days" -> "<multiplication sign> 10 days").
 COURSE_LENGTH_RE = re.compile(
-    r"\b(?:x|for)\s*\d+\s*(?:d|dys?|days?|w|wks?|weeks?|m|months?)\b", re.IGNORECASE
+    r"(?:\b(?:x|for)|\u00d7)\s*\d+\s*(?:d|dys?|days?|w|wks?|weeks?|m|months?)\b", re.IGNORECASE
 )
 
 # Dosing schedule: "1-0-1" (morning-afternoon-night), "1-1-1-1", "0-0-1/2", "1 - 0 - 1".
@@ -146,6 +149,8 @@ INSTRUCTION_WORDS = {
     "dose", "doses", "take",
     # duration words, including the way they are commonly handwritten ("x 30 dys", "8 wks")
     "dys", "dy", "wks", "wk", "weeks", "months", "month",
+    # "for 5 days": the preposition is not part of any name (it looked up brands starting "For...")
+    "for",
     # Spelled-out quantities: "days one g" is a dosing fragment, not a name.
     "one", "ones", "two", "three", "four", "five", "six", "seven", "eight",
     "nine", "ten", "half", "alternate", "continue", "stop",
@@ -1084,6 +1089,26 @@ def _ambiguous_variants(raw_line, cleaned_line, best, best_score, eligible, name
     return [_option_entry(score, candidate) for score, candidate in ordered], False, None
 
 
+def _unexplained_numbers(raw_line, candidate):
+    """
+    The numbers (two or more digits, no unit) the line writes that this product does not own: not
+    its first ingredient's strength and not a number in its name. Empty when the line writes no
+    such number, or when the product owns at least one of them.
+    """
+    flat = PER_VOLUME_RE.sub("", _strip_non_name_phrases(raw_line))
+    written = {canonical_number(n) for n in BARE_NUMBER_RE.findall(flat) if len(n.split(".")[0]) >= 2}
+    # a number carrying a unit is judged by the strength check, not here
+    written -= {canonical_number(n) for n, _ in STRENGTH_RE.findall(flat)}
+    if not written:
+        return []
+    numerators = ingredient_numerators(candidate.get("composition"))
+    own = set(numerators[:1]) | {canonical_number(n) for n in BARE_NUMBER_RE.findall(candidate.get("medicine_name") or "")}
+    strength = STRENGTH_RE.search(candidate.get("strength") or "")
+    if strength:
+        own.add(canonical_number(strength.group(1)))
+    return [] if (written & own) else sorted(written)
+
+
 def _unexplained_number(raw_line, candidate):
     """
     True when the line writes a number (two or more digits, no unit) that this product does not
@@ -1092,18 +1117,7 @@ def _unexplained_number(raw_line, candidate):
     Only meaningful for a candidate chosen on name similarity alone; a brand the line spells out
     in full explains its own numbers.
     """
-    flat = PER_VOLUME_RE.sub("", _strip_non_name_phrases(raw_line))
-    written = {canonical_number(n) for n in BARE_NUMBER_RE.findall(flat) if len(n.split(".")[0]) >= 2}
-    # a number carrying a unit is judged by the strength check, not here
-    written -= {canonical_number(n) for n, _ in STRENGTH_RE.findall(flat)}
-    if not written:
-        return False
-    numerators = ingredient_numerators(candidate.get("composition"))
-    own = set(numerators[:1]) | {canonical_number(n) for n in BARE_NUMBER_RE.findall(candidate.get("medicine_name") or "")}
-    strength = STRENGTH_RE.search(candidate.get("strength") or "")
-    if strength:
-        own.add(canonical_number(strength.group(1)))
-    return not (written & own)
+    return bool(_unexplained_numbers(raw_line, candidate))
 
 
 def _score_candidate(raw_line, cleaned_line, candidate, named_ingredients=None, line_release=None):
@@ -1210,7 +1224,221 @@ def _unidentified_or_skipped(raw_text):
     return {"raw_text": raw_text, "status": "skipped", "confidence": None, "medicine": None}
 
 
+def _written_form(raw_line):
+    """The dosage form the line says or implies ("tablet" for "Tab" or a leading "T."), or None."""
+    lowered = (raw_line or "").lower()
+    for keyword, pattern in DOSAGE_FORM_PATTERNS:
+        if pattern.search(lowered):
+            return keyword
+    return _inferred_form(raw_line)
+
+
+def form_conflict_text(raw_line, candidate_form):
+    """
+    A plain-language sentence when the line says (or implies, by "Tab" / "Cap" / a leading "T.") a dosage form the
+    product does not have, else None. Used to flag an automatic match for a second look; it never changes a match.
+    """
+    if not _form_mismatch(raw_line, candidate_form):
+        return None
+    return f"the prescription points to a {_written_form(raw_line)} but the matched product is a {(candidate_form or 'different form').lower()}"
+
+
+def _guess_reasons(raw_line, score, candidate):
+    """
+    Why a closest guess was NOT accepted on its own, in plain language, worked out from the same
+    rules that decided it (see _settles_automatically). The list is never empty for a guess that
+    reaches the person: a guess is only ever offered because one of these held.
+    """
+    reasons = []
+    blocked = _cannot_be_verified(raw_line, candidate)
+    if blocked == "incomplete ingredient list":
+        reasons.append("The dataset's ingredient list for this product is incomplete, so it cannot be checked against the line.")
+    elif blocked == "contains ingredients the line does not name":
+        reasons.append("This product contains ingredients the line does not name.")
+    elif blocked == "strength not on record":
+        reasons.append("This product has no strength on record, so the number written cannot be compared.")
+    if not _covers_every_token(raw_line, candidate["medicine_name"], exact=True):
+        reasons.append("The name as read is only similar to this product, not the same. The text may have been misread, "
+                       "or the brand may not be in the dataset.")
+        if score < AUTO_MATCH_MIN_CONFIDENCE:
+            reasons.append(f"The similarity ({percent(score)}%) is below the {percent(AUTO_MATCH_MIN_CONFIDENCE)}% "
+                           "needed to accept a look-alike without a person checking.")
+    if _form_mismatch(raw_line, candidate.get("form")):
+        reasons.append(f"The line points to a {_written_form(raw_line)} but this product is a {(candidate.get('form') or 'different form').lower()}.")
+    return reasons
+
+
+def name_matches_exactly(raw_text, candidate_name):
+    """
+    True when every meaningful word the line wrote is a word of the product's name, exactly (schedule digits such as the "100" of a
+    handwritten 1-0-0 are ignored). This is what separates a SUGGESTION (the written name is this brand's name; strength and form still
+    need a person) from a look-alike (a different name that merely scores well): it is never used to accept a match.
+    """
+    text, _digits = _without_schedule_digits(raw_text)
+    return _covers_every_token(text, candidate_name, exact=True)
+
+
+def _closest_guesses(raw_line, ranked_rows):
+    """
+    Up to MAX_OPTIONS look-alike products for a line that could not be settled, best first, each
+    with the reasons it was not accepted. Never confirmed: these are only what the person is shown.
+    """
+    guesses, seen = [], set()
+    for score, _threshold, _disqualified, candidate in ranked_rows:
+        if score < MIN_GUESS_SCORE:
+            break
+        key = (_normalize_for_match(candidate["medicine_name"]), composition_key(candidate.get("composition")))
+        if key in seen:
+            continue
+        seen.add(key)
+        entry = _option_entry(score, candidate)
+        entry["reasons"] = _guess_reasons(raw_line, score, candidate)
+        guesses.append(entry)
+        if len(guesses) >= MAX_OPTIONS:
+            break
+    return guesses
+
+
+_SCHEDULE_LOOKALIKE_RE = re.compile(r"^(?=.*1)[01]{3}$")
+
+# The text a line carries when a person added the medicine by hand: it is not something read from a prescription.
+MANUAL_ENTRY_TEXT = "Added manually"
+
+
+def assess_confirmation(raw_text, medicine):
+    """
+    What a person should know before confirming that the line `raw_text` is the product `medicine`.
+
+    Returns a list of {"code", "severity", "text"}; severity "conflict" is a clear mismatch between what
+    the line says and the chosen product (the person must acknowledge it to go ahead), "note" is
+    information only. It reuses the matcher's own evidence (name, form, strength, ingredients, release
+    type) and invents no new threshold. An empty list means nothing on the line contradicts the choice
+    - that is NOT a statement that the product is the right one or medically equivalent: only the person
+    holding the prescription can say that.
+    """
+    if not raw_text or raw_text.strip().lower() == MANUAL_ENTRY_TEXT.lower() or not _has_substantive_word(raw_text):
+        return []
+    name = medicine.get("medicine_name") or "this product"
+    findings = []
+
+    def add(code, severity, text):
+        findings.append({"code": code, "severity": severity, "text": text})
+
+    cleaned = _clean_for_comparison(raw_text)
+    query = _build_boolean_query(raw_text)
+    pool = [medicine] + (search_candidates(query) if query else [])
+    named = _named_ingredients(raw_text, pool)
+
+    # name
+    exact = _covers_every_token(raw_text, medicine["medicine_name"], exact=True)
+    ingredient_only = is_generic_line(raw_text, medicine) and not _missing_named_ingredients(medicine, named)
+    if not exact and not ingredient_only:
+        line_for_names = _without_form_words(cleaned)
+        similarity = max(
+            _similarity(line_for_names, _without_form_words(_normalize_for_match(medicine["medicine_name"]))),
+            _similarity(line_for_names, _without_form_words(_normalize_for_match(medicine.get("primary_salt") or ""))),
+        )
+        if similarity < MIN_NAME_SIMILARITY_WITHOUT_IDENTITY:
+            add("name", "conflict", f"The prescription line reads “{raw_text}”, which does not look like “{name}”. "
+                                    "If the line was misread, check the original prescription.")
+        else:
+            add("name", "note", f"The name on the line is only similar to “{name}”, not the same.")
+
+    # dosage form
+    if _form_mismatch(raw_text, medicine.get("form")):
+        add("form", "conflict", f"The prescription line points to a {_written_form(raw_text)}, but “{name}” is a "
+                                f"{(medicine.get('form') or 'different form').lower()}.")
+
+    # strength, per ingredient where the line gives one
+    strength_signal = _combination_strength_agreement(raw_text, medicine)
+    per_ingredient = _per_ingredient_agreement(raw_text, medicine, named)
+    if per_ingredient is not None:
+        strength_signal = per_ingredient
+    if strength_signal == 0.0:
+        add("strength", "conflict", f"The strength written on the line does not match “{name}” "
+                                    f"({medicine.get('strength') or 'strength not on record'}).")
+
+    # an ingredient the line names that the product does not contain
+    missing = _missing_named_ingredients(medicine, named)
+    if missing:
+        add("ingredient", "conflict", f"The line names {', '.join(sorted(missing))}, which “{name}” does not contain.")
+
+    # release type
+    line_release = detect_line_release(raw_text)
+    if line_release and medicine.get("release_type") != line_release:
+        add("release", "conflict", f"The line says {line_release.upper()} (a modified-release product), but “{name}” is not that release type.")
+
+    # a number the product does not own; a name that spells the brand out explains its own numbers
+    if not exact:
+        numbers = _unexplained_numbers(raw_text, medicine)
+        if numbers:
+            hint = ""
+            if any(_SCHEDULE_LOOKALIKE_RE.match(n) for n in numbers):
+                hint = " If it is the dose schedule (for example 1-0-0 read as 100) rather than a strength, you can ignore this."
+            add("number", "conflict", f"The number {', '.join(numbers)} on the line is not a strength of “{name}”.{hint}")
+
+    # facts about the chosen product that change what the analysis can say
+    if medicine.get("composition_incomplete"):
+        add("incomplete_composition", "note", "The dataset's ingredient list for this product is incomplete, so no alternatives are compared.")
+    if medicine.get("is_discontinued"):
+        add("discontinued", "note", "The dataset marks this product as discontinued.")
+    return findings
+
+
+def _without_schedule_digits(raw_text):
+    """
+    (text without the three digits that look like a dose schedule, those digits) - or (raw_text, None) when there are none.
+    Handwritten "1-0-0" very often comes back as "100", which then reads as a strength. Only digits that stand alone AFTER a
+    name are considered ("Tab Dolo 100", never "100 mg" or a leading number).
+    """
+    match = instruction_service.DIGITS_RUN_RE.search(raw_text or "")
+    if not match or not any(c != "0" for c in match.group(1)):
+        return raw_text, None
+    if not re.search(r"[A-Za-z]{3,}", (raw_text or "")[:match.start()]):
+        return raw_text, None
+    stripped = ((raw_text or "")[:match.start()] + " " + (raw_text or "")[match.end():]).strip()
+    return re.sub(r"\s{2,}", " ", stripped), match.group(1)
+
+
 def match_line(raw_text):
+    """
+    The outcome for one OCR line (see _match_line_once), with one extra step for handwriting.
+
+    Handwritten "1-0-0" very often comes back as "100" and is then read as a strength, which can push the right product out of
+    the candidates altogether ("T. pan - D 100": the top guess was a look-alike that merely contained "100"). When a line is
+    NOT settled and has three such digits after its name, the line is read again without them, and if that second reading
+    settles on a product whose name carries no number of its own and which does not own that number as a strength, that product
+    is put FIRST among the candidates, with the reason.
+
+    It never settles the line: the status stays "needs_verification". The number written on the line is exactly what the
+    product contradicts, so only the person can say whether it was a schedule. The result carries "ignored_schedule_digits".
+    """
+    result = _match_line_once(raw_text)
+    if result["status"] != "needs_verification":
+        return result
+    alt, digits = _without_schedule_digits(raw_text)
+    if not digits:
+        return result
+    retry = _match_line_once(alt)
+    candidate = retry.get("medicine")
+    if retry["status"] != "matched" or not candidate:
+        return result
+    if re.search(r"\d", candidate.get("medicine_name") or "") or digits in instruction_service.owned_numbers(candidate):
+        return result
+
+    entry = _option_entry(retry["confidence"], candidate)
+    entry["reasons"] = [
+        f"Without the number {digits} this product fits the name. {digits} may be a dose schedule ({'-'.join(digits)}) read as digits, "
+        "not a strength, but this product has no such strength, so only you can say.",
+    ] + _guess_reasons(raw_text, retry["confidence"], candidate)[1:]
+    others = [g for g in (result.get("guesses") or []) if g["medicine_id"] != candidate["medicine_id"]]
+    return {
+        **result, "raw_text": raw_text, "medicine": candidate, "confidence": round(retry["confidence"], 4),
+        "guesses": ([entry] + others)[:MAX_OPTIONS], "ignored_schedule_digits": digits,
+    }
+
+
+def _match_line_once(raw_text):
     """
     Returns a dict describing the outcome for one OCR line:
       {
@@ -1372,5 +1600,7 @@ def match_line(raw_text):
             "status": "needs_verification",
             "confidence": round(best_score, 4),
             "medicine": best_candidate,  # closest guess only - NOT confirmed, caller must label it as such
+            # the closest look-alikes with why each was not accepted: stored so the person can review them
+            "guesses": _closest_guesses(raw_text, guessable),
         }
     return _unidentified_or_skipped(raw_text)

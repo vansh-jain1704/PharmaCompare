@@ -16,6 +16,11 @@ USER_CONFIRMED = "user_confirmed"
 # Closest guess only. Never analysed, never priced, never presented as fact.
 NEEDS_VERIFICATION = "needs_verification"
 
+# A person looked at the line, and said it is NOT any medicine PharmaCompare could offer (or not a
+# medicine at all). It points at no product, so it is never analysed or priced - exactly like
+# NEEDS_VERIFICATION - but it records that the line WAS reviewed and what the answer was.
+USER_UNMATCHED = "user_unmatched"
+
 CONFIRMED_STATUSES = frozenset({MATCHED, USER_CONFIRMED})
 
 

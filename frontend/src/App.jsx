@@ -12,6 +12,8 @@ import UploadPrescription from "./pages/UploadPrescription";
 import PrescriptionHistory from "./pages/PrescriptionHistory";
 import PrescriptionReport from "./pages/PrescriptionReport";
 import MedicineSearch from "./pages/MedicineSearch";
+import ScanMedicine from "./pages/ScanMedicine";
+import StoreFinder from "./pages/StoreFinder";
 import Profile from "./pages/Profile";
 
 const guarded = (element) => <ProtectedRoute>{element}</ProtectedRoute>;
@@ -28,6 +30,8 @@ export default function App() {
         <Route path="/onboarding" element={guarded(<Onboarding />)} />
         <Route path="/upload" element={guarded(<UploadPrescription />)} />
         <Route path="/search" element={guarded(<MedicineSearch />)} />
+        <Route path="/scan" element={guarded(<ScanMedicine />)} />
+        <Route path="/stores" element={guarded(<StoreFinder />)} />
         <Route path="/prescriptions" element={guarded(<PrescriptionHistory />)} />
         <Route path="/prescriptions/:id" element={guarded(<PrescriptionReport />)} />
         <Route path="/profile" element={guarded(<Profile />)} />

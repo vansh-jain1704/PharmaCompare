@@ -1,7 +1,7 @@
 import json
 
 from app.db import get_connection
-from app.services import medicine_search
+from app.services import match_status, medicine_search
 
 # How many FULLTEXT candidates to pull before Python-side fuzzy scoring
 # picks the best one. Kept generous since FULLTEXT is only used for cheap
@@ -174,8 +174,13 @@ def search_by_name_prefix(words):
 
 
 def search_medicines_for_picker(term, limit=20):
+    """The products matching what was typed (see search_medicines_with_mode), without the fallback flag."""
+    return search_medicines_with_mode(term, limit)[0]
+
+
+def search_medicines_with_mode(term, limit=20):
     """
-    Free-text lookup used by the manual "which medicine is this?" picker.
+    Free-text lookup used by the manual "which medicine is this?" picker. Returns (rows, used_fallback).
 
     Every word typed has to match the product (its name, its ingredients, its strength or its release
     type), hyphens / dots / spaces are interchangeable ("Pan D" = "Pan-D" = "pan - D"), and results are
@@ -186,24 +191,26 @@ def search_medicines_for_picker(term, limit=20):
     the dataset uses Indian/British salt spellings: searching the standard
     "Amoxicillin" found NOTHING while the dataset's "Amoxycillin" returned
     thousands. A user typing the spelling they know would conclude the
-    database was empty.
+    database was empty. `used_fallback` is True for those results: they are products whose
+    names merely START like the typed text, not products that match it, and the caller must say so.
     """
     term = (term or "").strip()
     if len(term) < 2:
-        return []
+        return [], False
 
     parsed = medicine_search.parse_query(term)
     if not parsed["tokens"]:
-        return []                                  # only a dosage form was typed ("tablet"): nothing to look for
+        return [], False                           # only a dosage form was typed ("tablet"): nothing to look for
     rows = medicine_search.rank_rows(term, _search_candidates_for_picker(parsed), limit)
     if rows:
-        return rows
+        return rows, False
 
     # e.g. "amoxicillin" -> "amox%", which reaches "Amoxycillin" too.
     stem = "".join(ch for ch in term if ch.isalpha())[:SPELLING_FALLBACK_PREFIX_LEN]
     if len(stem) < SPELLING_FALLBACK_PREFIX_LEN:
-        return []
-    return _search_medicines_prefix(stem, limit)
+        return [], False
+    rows = _search_medicines_prefix(stem, limit)
+    return rows, bool(rows)
 
 
 def _search_medicines_prefix(stem, limit):
@@ -292,6 +299,48 @@ def update_prescription_medicine_match(pm_id, medicine_id, match_status="user_co
                    match_options = NULL
                WHERE pm_id = %s""",
             (medicine_id, match_status, pm_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def mark_prescription_medicine_unmatched(pm_id):
+    """
+    Records that a person reviewed this line and said it is not a medicine PharmaCompare can
+    identify. The line keeps its OCR text, its match confidence and the candidates it was shown
+    (so the decision can be reviewed later), but points at no product: it is never analysed or priced.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE Prescription_Medicines SET medicine_id = NULL, match_status = %s WHERE pm_id = %s",
+            (match_status.USER_UNMATCHED, pm_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def save_user_entered_details(pm_id, match_options_json, frequency, duration):
+    """
+    Records a medicine the person typed in for a line the dataset cannot identify. The line points at no product (it is never priced
+    or analysed), keeps its OCR text and the look-alikes it was shown, and carries the typed name / strength / form in match_options and
+    the typed schedule and duration in frequency and duration. Nothing else on the line changes.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """UPDATE Prescription_Medicines
+               SET medicine_id = NULL, match_status = %s, match_options = %s, frequency = %s, duration = %s
+               WHERE pm_id = %s""",
+            (match_status.USER_UNMATCHED, match_options_json, frequency, duration, pm_id),
         )
         conn.commit()
         return cursor.rowcount > 0

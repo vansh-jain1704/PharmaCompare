@@ -40,7 +40,8 @@ from app.services.price_comparison_service import get_annotated_price_comparison
 from app.models.recommendation_model import get_recommendations
 from app.models.safety_model import get_analysis_summary, get_findings
 from app.models.user_model import get_user_allergies
-from app.services import medicine_safety_service
+from app.services import data_sources_service, data_validation_service, medicine_safety_service, offer_service, price_provenance_service, prescription_notes_service, recommendation_notes, report_summary_service, timeline_service
+from app.services.display_rounding import percent, round_half_up
 from app.services.match_status import is_confirmed
 from app.services.release_type import RELEASE_LABELS
 
@@ -218,12 +219,14 @@ def _group_price_rows(price_rows):
 
 
 def _status_for(pm, safety, identified):
-    """The same four words the analysis page uses in its Status column."""
+    """The same words the analysis page uses in its Status column."""
+    if pm["match_status"] == "user_unmatched":
+        return "Entered by you" if safety.get("user_entered") else "Not identified (by you)"
     if not identified:
-        return "Needs verification"
+        return "Suggested" if safety.get("suggested") else "Needs verification"
     if pm["match_status"] == "user_confirmed":
         return "Confirmed"
-    if safety["needs_disambiguation"] or safety["ocr_uncertain"]:
+    if safety["needs_disambiguation"] or safety["ocr_uncertain"] or safety.get("needs_check"):
         return "Check match"
     return "Matched"
 
@@ -231,13 +234,15 @@ def _status_for(pm, safety, identified):
 def _confidence_text(pm, identified, safety=None):
     if pm["match_status"] == "user_confirmed":
         return "Confirmed by you"
+    if pm["match_status"] == "user_unmatched":
+        return "Entered by you" if safety and safety.get("user_entered") else "Marked by you"
     if not identified and safety and safety.get("needs_disambiguation"):
         # no single product was named, so there is no confidence to quote
         return f"{len(safety['match_options'])} possible products"
     confidence = pm.get("match_confidence")
     if confidence is None:
         return "No match found"
-    pct = round(float(confidence) * 100)
+    pct = percent(confidence)
     return f"{pct}% confidence" if identified else f"Closest guess: {pct}%"
 
 
@@ -274,8 +279,10 @@ def _savings_for(identified, safety, entry):
         return False, price, None, None, reason
     alt = min(comparable, key=lambda a: float(a["price"]))
     saving = price - float(alt["price"])
-    if safety["needs_disambiguation"] or safety["ocr_uncertain"]:
+    if safety["needs_disambiguation"] or safety["ocr_uncertain"] or safety.get("needs_check"):
         return False, price, alt, saving, "Not counted: check match first"
+    if safety.get("confirmed_with_conflicts"):
+        return False, price, alt, saving, "Not counted: confirmed despite differences from the line"
     return True, price, alt, saving, None
 
 
@@ -314,11 +321,20 @@ def collect_report_data(prescription_id, prescription):
             "price": price, "alt": alt, "saving": saving if counts else None, "reason": reason,
         })
 
-    needs_attention = sum(1 for ln in lines if ln["status"] in ("Needs verification", "Check match"))
+    needs_attention = sum(1 for ln in lines if ln["status"] in ("Needs verification", "Check match", "Suggested"))
     return {
         "prescription": prescription,
         "title": prescription_title(prescription),
         "lines": lines,
+        # lines of the prescription that are not medicines, and what the allergy check had to work with
+        "notes": prescription_notes_service.notes_from_ocr_lines(ocr.get("line_results") or []),
+        # where the prices come from, and whether any live feed exists (the same statements the analysis page shows)
+        "price_basis": price_provenance_service.dataset_basis(),
+        "live_data": data_sources_service.live_data(),
+        "allergy_check": medicine_safety_service.allergy_check_status(allergies),
+        "timeline": timeline_service.build_timeline(timeline_service.entries_from_report_lines(lines)),
+        # what pharmacies have reported for the identified medicines (empty when no feed has been imported)
+        "offers": offer_service.offers_for_medicines([ln["pm"]["medicine_id"] for ln in lines if ln["identified"]]),
         "medicines": medicines,
         "prices": prices,
         "analysis": get_analysis_summary(prescription_id),
@@ -328,7 +344,8 @@ def collect_report_data(prescription_id, prescription):
         "original_total": round(original_total, 2),
         "counted_for_savings": counted,
         "detected": len(lines),
-        "settled": len(lines) - needs_attention,
+        # identified and not waiting on a check; a line the person marked "not identified" is decided, but not settled
+        "settled": sum(1 for ln in lines if ln["identified"] and ln["status"] not in ("Needs verification", "Check match", "Suggested")),
         "needs_attention": needs_attention,
     }
 
@@ -346,11 +363,28 @@ def _medicines_section(data, s):
                 cell.append(Paragraph(f"Contains: {_esc(pm['composition'])}", s["cellmuted"]))
             if sf["brand_unspecified"]:
                 cell.append(Paragraph("Generic name written: any brand with this composition fits.", s["cellmuted"]))
+            for note in data_validation_service.data_notes(pm, warn_only=True):
+                cell.append(Paragraph(f"Data note: {_esc(note['text'])}", s["cellmuted"]))
+        elif sf.get("user_entered"):
+            typed = sf["user_entered"]
+            cell = [
+                Paragraph(f"<b>{_esc(typed['name'])}</b>", s["cell"]),
+                Paragraph(f"Entered by you. Read from the prescription as \u201c{_esc((pm['raw_text'] or '-').strip())}\u201d.", s["cellmuted"]),
+                Paragraph("Not matched to the dataset: no price, saving or safety check is shown for it.", s["cellmuted"]),
+            ]
         else:
             cell = [
                 Paragraph(f"<b>{_esc(pm['raw_text'] or '-')}</b>", s["cell"]),
                 Paragraph("Not confirmed - verify against the original prescription.", s["cellmuted"]),
             ]
+            if sf.get("suggested"):
+                cell.append(Paragraph(f"Suggested: {_esc(sf['suggestion']['medicine_name'])}. The name matches what was read; strength, form "
+                                      "and the reading still need your check.", s["cellwarn"]))
+            elif sf["closest_guesses"]:
+                shown = "; ".join(f"{g['medicine_name']} ({percent(g['score'])}%)" for g in sf["closest_guesses"][:3] if g.get("medicine_name"))
+                cell.append(Paragraph(f"Closest look-alikes (not confirmed): {_esc(shown)}", s["cellmuted"]))
+            if not sf["needs_disambiguation"] and sf.get("verification_reasons"):
+                cell.append(Paragraph(_esc(sf["verification_reasons"][0]), s["cellmuted"]))
             if sf["needs_disambiguation"]:
                 if sf["verification_reason"]:
                     cell.append(Paragraph(_esc(sf["verification_reason"][0].upper() + sf["verification_reason"][1:] + "."), s["cellwarn"]))
@@ -362,15 +396,22 @@ def _medicines_section(data, s):
             cell.append(Paragraph(_esc(sf["verification_label"]), s["cellwarn"]))
 
         if ln["identified"]:
-            strength_form = " ".join(x for x in (pm["strength"], pm["form"]) if x) or "-"
+            strength_form = " ".join(x for x in (sf.get("display_strength") or pm["strength"], pm["form"]) if x) or "-"
             release = pm.get("release_type")
             if release:
                 strength_form += f" ({RELEASE_LABELS.get(release, 'modified release')})"
+        elif sf.get("user_entered"):
+            strength_form = " ".join(x for x in (sf["user_entered"].get("strength"), sf["user_entered"].get("form")) if x) or "-"
         else:
             strength_form = "-"
 
+        ins = sf.get("instructions") or {}
+        dose_timing = ", ".join(x for x in (ins.get("dose"), ins.get("timing")) if x) or pm["dosage"]
+        duration = f"for {ins['duration']}" if ins.get("duration") else (f"for {pm['duration']}" if pm["duration"] else None)
+        if not duration and ins.get("duration_unreadable"):
+            duration = "number of days not readable"
         instructions = " · ".join(
-            p for p in (pm["dosage"], pm["frequency"], f"for {pm['duration']}" if pm["duration"] else None) if p
+            p for p in (ins.get("text") or pm["frequency"], dose_timing, duration) if p
         ) or "Not specified"
 
         status_style = s["cellgood"] if ln["status"] in ("Matched", "Confirmed") else s["cellwarn"]
@@ -384,8 +425,107 @@ def _medicines_section(data, s):
     return _table(rows, [56 * mm, 28 * mm, 38 * mm, 28 * mm, 28 * mm])
 
 
-def _safety_section(data, s):
+def _notes_section(data, s):
+    """Instructions and notes on the prescription that are not medicines. Hindi text cannot be set in the PDF's font, so only its reading is."""
     flow = []
+    for note in data["notes"]:
+        if note["kind"] == "hindi_note":
+            if note["possible_meaning"]:
+                text = f"Handwritten Hindi note. Automatic reading, please check it: \u201c{note['possible_meaning']}\u201d. It does not say which medicine it belongs to."
+            else:
+                text = "A handwritten Hindi note that could not be translated automatically (see the original prescription)."
+        else:
+            text = note["text"]
+        flow.append(Paragraph("\u2022 " + _esc(text), s["body"]))
+    return flow
+
+
+def _allergy_note(data, s):
+    check = data["allergy_check"]
+    return [Paragraph(f"<b>Allergy check:</b> {_esc(check['message'])}", s["body"] if check["declared"] else s["cellwarn"]), Spacer(1, 5)]
+
+
+def _summary_section(data, s):
+    """The plain-language summary and, always, who wrote it."""
+    summary = report_summary_service.summarise(data)
+    return [Paragraph(_esc(summary["text"]), s["body"]), Paragraph(f"<i>{_esc(summary['label'])}</i>", s["small"])]
+
+
+def _alternatives_notes(s):
+    """How the alternatives were chosen and what is not compared, in the same words as the screen."""
+    notes = recommendation_notes.notes_for()
+    return [
+        Paragraph("<b>How alternatives are chosen:</b> a product with " + _esc("; ".join(notes["matched"])) + ".", s["small"]),
+        Paragraph("<b>Not compared:</b> " + _esc("; ".join(notes["not_compared"])) + ".", s["small"]),
+        Paragraph(_esc(notes["safety"] + " " + notes["ask_first"]), s["small"]),
+    ]
+
+
+def _offers_section(data, s):
+    """What pharmacies have REPORTED (price, stock, when, which feed). Never mixed with the dataset's reference price."""
+    rows = [["Medicine", "Pharmacy", "Price", "Stock", "Reported", "Source"]]
+    demo = False
+    for ln in data["lines"]:
+        described = data["offers"].get(ln["pm"]["medicine_id"]) if ln["identified"] else None
+        if not described:
+            continue
+        demo = demo or described["has_demo_data"]
+        for i, item in enumerate(described["items"]):
+            stock = "Stock not stated" if item["availability"] == "unknown" else item["availability_label"] + (" (old report)" if item["stock_stale"] else "")
+            rows.append([
+                Paragraph(_esc(ln["pm"]["medicine_name"]) if i == 0 else "", s["cell"]),
+                Paragraph(_esc(item["pharmacy"] + (f", {item['city']}" if item["city"] else "")), s["cell"]),
+                Paragraph(_esc(_rupees(item["price"]) + (" (old)" if item["price_stale"] else "") if item["price"] is not None else "No price"), s["cell"]),
+                Paragraph(_esc(stock), s["cell"]),
+                Paragraph(_esc(item["age"]), s["cell"]),
+                Paragraph(_esc(item["source"] + (" (demo)" if item["demo"] else "")), s["cell"]),
+            ])
+    if len(rows) == 1:
+        return [Paragraph("No pharmacy has reported a price or stock for the medicines on this prescription. " + _esc(data["live_data"]["statement"]), s["body"])]
+    flow = []
+    if demo:
+        flow.append(Paragraph("<b>Demo data:</b> some of these are not real pharmacies and not real prices.", s["cellwarn"]))
+    flow.append(_table(rows, [30 * mm, 36 * mm, 20 * mm, 32 * mm, 22 * mm, 38 * mm]))
+    flow.append(Spacer(1, 3))
+    flow.append(Paragraph("Reported by the pharmacies and not checked by PharmaCompare. Prices and stock change: confirm with the pharmacy.", s["small"]))
+    return flow
+
+
+def _timeline_section(data, s):
+    """The Medicine Timeline: when each identified medicine is taken, exactly as the prescription wrote it."""
+    timeline = data["timeline"]
+    if not timeline["has_content"]:
+        return [Paragraph("No dosing instructions could be read from this prescription.", s["body"])]
+    rows = [["When", "Medicine", "Amount / timing", "How long"]]
+    for slot in timeline["slots"]:
+        for i, item in enumerate(slot["items"]):
+            rows.append([
+                Paragraph(f"<b>{_esc(slot['label'])}</b>" if i == 0 else "", s["cell"]),
+                Paragraph(_esc(item["medicine"] or "-") + (" <i>(possible schedule)</i>" if item["possible"] else ""), s["cell"]),
+                Paragraph(_esc(" · ".join(x for x in (item["amount"], item["timing"]) if x) or "-"), s["cell"]),
+                Paragraph(_esc(item["duration"]), s["cell"]),
+            ])
+    for group in timeline["groups"]:
+        for i, item in enumerate(group["items"]):
+            rows.append([
+                Paragraph(f"<b>{_esc(group['label'])}</b>" if i == 0 else "", s["cell"]),
+                Paragraph(_esc(item["medicine"] or "-") + (" <i>(possible schedule)</i>" if item["possible"] else ""), s["cell"]),
+                Paragraph(_esc(" · ".join(x for x in (item.get("frequency"), item["amount"], item["timing"]) if x) or "-"), s["cell"]),
+                Paragraph(_esc(item["duration"]), s["cell"]),
+            ])
+    flow = [_table(rows, [28 * mm, 58 * mm, 52 * mm, 40 * mm]) if len(rows) > 1 else Spacer(1, 1)]
+    if timeline["not_identified"]:
+        flow.append(Spacer(1, 4))
+        flow.append(Paragraph("<b>Not in the timeline until identified:</b> " + _esc("; ".join(
+            f"“{n['source_text']}” read as {n['read_as'] or 'no schedule'}, {n['duration']}" for n in timeline["not_identified"])), s["small"]))
+    flow.append(Spacer(1, 3))
+    flow.append(Paragraph("Taken from the instructions written on the prescription. A schedule marked possible was only partly readable: "
+                          "check the original. Nothing here is a dosing recommendation.", s["small"]))
+    return flow
+
+
+def _safety_section(data, s):
+    flow = list(_allergy_note(data, s))
     analysis = data["analysis"]
     if analysis and analysis.get("summary"):
         flow.append(Paragraph(_esc(analysis["summary"]), s["body"]))
@@ -411,12 +551,15 @@ def _safety_section(data, s):
 
 
 def _savings_section(data, s):
-    flow = []
+    flow = [
+        Paragraph(f"<b>Where these prices come from.</b> {_esc(data['price_basis']['label'])} {_esc(data['live_data']['statement'])}", s["small"]),
+        Spacer(1, 5),
+    ]
     if data["total_saving"] > 0:
-        pct = (data["total_saving"] / data["original_total"] * 100) if data["original_total"] else 0
+        pct = round_half_up(data["total_saving"] / data["original_total"] * 100) if data["original_total"] else 0
         flow.append(Paragraph(
             f"<b>Switching to the cheapest comparable alternative could save "
-            f"{_rupees(data['total_saving'])} ({pct:.0f}% lower) across {data['counted_for_savings']} of "
+            f"{_rupees(data['total_saving'])} ({pct}% lower) across {data['counted_for_savings']} of "
             f"{data['detected']} medicine{'s' if data['detected'] != 1 else ''}.</b>",
             ParagraphStyle("sv", parent=s["body"], textColor=SUCCESS_GREEN, fontSize=10),
         ))
@@ -477,12 +620,20 @@ def build_report_pdf(prescription_id, prescription, output_path):
               Paragraph("<b>Report generated</b>", s["cell"]), Paragraph(datetime.now().strftime("%d %b %Y, %I:%M %p"), s["cell"])]],
             [28 * mm, 64 * mm, 32 * mm, 54 * mm],
         ),
+        *_heading("Summary", s),
+        *_summary_section(data, s),
         *_heading("Doctor prescribed medicines", s),
         _medicines_section(data, s),
+        *([*_heading("Other instructions on the prescription (not medicines)", s), *_notes_section(data, s)] if data["notes"] else []),
+        *_heading("Medicine timeline", s),
+        *_timeline_section(data, s),
         *_heading("Safety check", s),
         *_safety_section(data, s),
         *_heading("Price comparison &amp; possible savings", s),
         *_savings_section(data, s),
+        *_alternatives_notes(s),
+        *_heading("Pharmacy prices and stock (as reported)", s),
+        *_offers_section(data, s),
         Spacer(1, 14),
     ]
     flow.append(KeepTogether([

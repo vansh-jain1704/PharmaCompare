@@ -36,8 +36,11 @@ import requests
 from app.config import Config
 
 VISION_FEATURE = "DOCUMENT_TEXT_DETECTION"
-# Tells Vision the page is English; it still returns whatever it reads.
-LANGUAGE_HINTS = ["en"]
+# Tells Vision which languages to expect; it still returns whatever it reads. Hindi is included because Indian prescriptions often carry a
+# handwritten Hindi note ("सुबह खाने बाद" = morning, after food). With English only, Vision read that note as Latin gibberish ("2TTE 2016 OTG"),
+# which then appeared as a sixth "medicine". Measured on a real prescription: with ["en", "hi"] the note is read in Devanagari and every English
+# line comes back unchanged.
+LANGUAGE_HINTS = ["en", "hi"]
 
 
 # ---- keeping the API key out of every message --------------------------------------------------

@@ -1,0 +1,740 @@
+{
+ "allergy_check": {
+  "count": 0,
+  "declared": false,
+  "message": "No allergies are saved on your account, so the allergy check did not run. This does NOT mean no allergy was found: add your allergies in your profile, then open this report again."
+ },
+ "clinical_analysis": {
+  "findings": [
+   {
+    "confidence": null,
+    "created_at": "Sun, 18 Oct 2026 19:48:36 GMT",
+    "data_source": "none - no medicine on this prescription is confirmed yet",
+    "explanation": "No medicine on this prescription has been confirmed yet, so the interaction, duplicate and allergy checks have not run. Confirm each medicine (use Verify on its row) and the checks will run on it.",
+    "finding_id": 7619,
+    "issue_type": "allergy_check",
+    "medicines_involved": [],
+    "prescription_id": 4163,
+    "recommendation": "Please check each line against your original prescription, and tell your doctor or pharmacist about any known drug allergies. This is not a diagnosis. Please verify with your doctor or pharmacist before acting on it.",
+    "severity": "NEEDS_VERIFICATION"
+   }
+  ],
+  "risk_level": "NEEDS_VERIFICATION",
+  "summary": "Analyzed 0 confirmed medicine(s) in this prescription. This is not a diagnosis. Please verify with your doctor or pharmacist before acting on it."
+ },
+ "detected_medicines": [
+  {
+   "allergy_alert": false,
+   "allergy_alert_text": null,
+   "alternatives_notes": null,
+   "brand_unspecified": false,
+   "closest_guesses": [
+    {
+     "composition": "Sertraline (100mg)",
+     "form": "Tablet",
+     "manufacturer": "Ceras Pharmaceutical",
+     "medicine_id": 126923,
+     "medicine_name": "Lincer 100mg Tablet",
+     "reasons": [
+      "The name as read is only similar to this product, not the same. The text may have been misread, or the brand may not be in the dataset.",
+      "The similarity (82%) is below the 90% needed to accept a look-alike without a person checking."
+     ],
+     "release_type": null,
+     "score": 0.8174,
+     "strength": "100mg"
+    },
+    {
+     "composition": "Aceclofenac (100mg) + Paracetamol (325mg)",
+     "form": "Tablet",
+     "manufacturer": "Linchpin Biosciences Pvt Ltd",
+     "medicine_id": 128393,
+     "medicine_name": "Linchflam-SP Tablet",
+     "reasons": [
+      "The name as read is only similar to this product, not the same. The text may have been misread, or the brand may not be in the dataset.",
+      "The similarity (66%) is below the 90% needed to accept a look-alike without a person checking."
+     ],
+     "release_type": null,
+     "score": 0.6609,
+     "strength": "100mg"
+    },
+    {
+     "composition": "Linezolid (100mg)",
+     "form": "Syrup",
+     "manufacturer": "Colors Life Sciences",
+     "medicine_id": 132732,
+     "medicine_name": "Lincol 100mg Dry Syrup",
+     "reasons": [
+      "The name as read is only similar to this product, not the same. The text may have been misread, or the brand may not be in the dataset.",
+      "The similarity (65%) is below the 90% needed to accept a look-alike without a person checking.",
+      "The line points to a tablet but this product is a syrup."
+     ],
+     "release_type": null,
+     "score": 0.65,
+     "strength": "100mg"
+    }
+   ],
+   "composition": null,
+   "composition_incomplete": null,
+   "confirmation_conflicts": [],
+   "confirmed_with_conflicts": false,
+   "display_strength": null,
+   "dosage": null,
+   "duration": "30 days",
+   "flag_reasons": [],
+   "form": null,
+   "form_conflict": false,
+   "frequency": "Possibly 1-0-0 (digits read as 100)",
+   "imported_at": null,
+   "instructions": {
+    "dose": null,
+    "duration": "30 days",
+    "duration_days": 30,
+    "duration_unreadable": false,
+    "frequency": "Once daily",
+    "schedule": "1-0-0",
+    "schedule_certainty": "digits_run_together",
+    "slots": {
+     "afternoon": 0.0,
+     "morning": 1.0,
+     "night": 0.0
+    },
+    "sources": [
+     "T Lincont 100",
+     "x30dys"
+    ],
+    "text": "possibly 1-0-0: morning (the digits were read as “100”; check the prescription)",
+    "timing": null
+   },
+   "interaction_label": "Not checked – this line hasn't been identified yet.",
+   "interaction_severity": null,
+   "interaction_status": "interaction_data_not_available",
+   "is_discontinued": null,
+   "manufacturer": null,
+   "match_confidence": "0.8174",
+   "match_options": [],
+   "match_status": "needs_verification",
+   "medicine_id": null,
+   "medicine_name": null,
+   "needs_check": false,
+   "needs_disambiguation": false,
+   "ocr_confidence": 0.6269,
+   "ocr_uncertain": false,
+   "offers": null,
+   "pack_size": null,
+   "pm_id": 7665,
+   "price": null,
+   "primary_salt": null,
+   "raw_text": "T Lincont 100",
+   "read_assumption": null,
+   "release_label": null,
+   "release_type": null,
+   "secondary_salt": null,
+   "strength": null,
+   "suggested": false,
+   "suggestion": null,
+   "user_entered": null,
+   "user_unmatched": false,
+   "verification_decision": null,
+   "verification_history": [],
+   "verification_label": "Not identified yet – only look-alike products were found. Please check them against your prescription.",
+   "verification_reason": null,
+   "verification_reasons": [
+    "The name as read is only similar to this product, not the same. The text may have been misread, or the brand may not be in the dataset.",
+    "The similarity (82%) is below the 90% needed to accept a look-alike without a person checking."
+   ],
+   "verification_status": "pending_verification"
+  },
+  {
+   "allergy_alert": false,
+   "allergy_alert_text": null,
+   "alternatives_notes": null,
+   "brand_unspecified": false,
+   "closest_guesses": [
+    {
+     "composition": "Ademetionine (400mg)",
+     "form": "Tablet",
+     "manufacturer": "Shelton Pharmaceuticals Pvt Ltd",
+     "medicine_id": 202864,
+     "medicine_name": "Sheltral 400 Tablet",
+     "reasons": [
+      "The name as read is only similar to this product, not the same. The text may have been misread, or the brand may not be in the dataset.",
+      "The similarity (72%) is below the 90% needed to accept a look-alike without a person checking."
+     ],
+     "release_type": null,
+     "score": 0.7231,
+     "strength": "400mg"
+    },
+    {
+     "composition": "Calcium (500mg) + Vitamin D3 (250IU)",
+     "form": "Tablet",
+     "manufacturer": "Medipol Pharmaceuticals India Pvt Ltd",
+     "medicine_id": 36448,
+     "medicine_name": "Cal O Tablet",
+     "reasons": [
+      "The name as read is only similar to this product, not the same. The text may have been misread, or the brand may not be in the dataset.",
+      "The similarity (72%) is below the 90% needed to accept a look-alike without a person checking."
+     ],
+     "release_type": null,
+     "score": 0.7158,
+     "strength": "500mg"
+    },
+    {
+     "composition": "Levocetirizine (5mg) + Montelukast (10mg)",
+     "form": "Tablet",
+     "manufacturer": "Shell Laboratories",
+     "medicine_id": 210867,
+     "medicine_name": "Shellkast L 5mg/10mg Tablet",
+     "reasons": [
+      "The name as read is only similar to this product, not the same. The text may have been misread, or the brand may not be in the dataset.",
+      "The similarity (68%) is below the 90% needed to accept a look-alike without a person checking."
+     ],
+     "release_type": null,
+     "score": 0.6824,
+     "strength": "5mg"
+    }
+   ],
+   "composition": null,
+   "composition_incomplete": null,
+   "confirmation_conflicts": [],
+   "confirmed_with_conflicts": false,
+   "display_strength": null,
+   "dosage": null,
+   "duration": null,
+   "flag_reasons": [],
+   "form": null,
+   "form_conflict": false,
+   "frequency": "0-1-0: afternoon",
+   "imported_at": null,
+   "instructions": {
+    "dose": null,
+    "duration": null,
+    "duration_days": null,
+    "duration_unreadable": false,
+    "frequency": "Once daily",
+    "schedule": "0-1-0",
+    "schedule_certainty": "written",
+    "slots": {
+     "afternoon": 1.0,
+     "morning": 0.0,
+     "night": 0.0
+    },
+    "sources": [
+     "T shel cal soong 0-1-0"
+    ],
+    "text": "0-1-0: afternoon",
+    "timing": null
+   },
+   "interaction_label": "Not checked – this line hasn't been identified yet.",
+   "interaction_severity": null,
+   "interaction_status": "interaction_data_not_available",
+   "is_discontinued": null,
+   "manufacturer": null,
+   "match_confidence": "0.7231",
+   "match_options": [],
+   "match_status": "needs_verification",
+   "medicine_id": null,
+   "medicine_name": null,
+   "needs_check": false,
+   "needs_disambiguation": false,
+   "ocr_confidence": 0.6952,
+   "ocr_uncertain": false,
+   "offers": null,
+   "pack_size": null,
+   "pm_id": 7666,
+   "price": null,
+   "primary_salt": null,
+   "raw_text": "T shel cal soong 0-1-0",
+   "read_assumption": null,
+   "release_label": null,
+   "release_type": null,
+   "secondary_salt": null,
+   "strength": null,
+   "suggested": false,
+   "suggestion": null,
+   "user_entered": null,
+   "user_unmatched": false,
+   "verification_decision": null,
+   "verification_history": [],
+   "verification_label": "Not identified yet – only look-alike products were found. Please check them against your prescription.",
+   "verification_reason": null,
+   "verification_reasons": [
+    "The name as read is only similar to this product, not the same. The text may have been misread, or the brand may not be in the dataset.",
+    "The similarity (72%) is below the 90% needed to accept a look-alike without a person checking.",
+    "The text of this line was read with low confidence (70%), so it may not say what is written on the prescription."
+   ],
+   "verification_status": "pending_verification"
+  },
+  {
+   "allergy_alert": false,
+   "allergy_alert_text": null,
+   "alternatives_notes": null,
+   "brand_unspecified": false,
+   "closest_guesses": [],
+   "composition": null,
+   "composition_incomplete": null,
+   "confirmation_conflicts": [],
+   "confirmed_with_conflicts": false,
+   "display_strength": null,
+   "dosage": null,
+   "duration": null,
+   "flag_reasons": [],
+   "form": null,
+   "form_conflict": false,
+   "frequency": "Once weekly",
+   "imported_at": null,
+   "instructions": {
+    "dose": null,
+    "duration": null,
+    "duration_days": null,
+    "duration_unreadable": false,
+    "frequency": "Once weekly",
+    "schedule": null,
+    "schedule_certainty": null,
+    "slots": null,
+    "sources": [
+     "Tap D - risl 60 k",
+     "Once in a week f Sweets"
+    ],
+    "text": "Once weekly",
+    "timing": null
+   },
+   "interaction_label": "Not checked – this line hasn't been identified yet.",
+   "interaction_severity": null,
+   "interaction_status": "interaction_data_not_available",
+   "is_discontinued": null,
+   "manufacturer": null,
+   "match_confidence": null,
+   "match_options": [],
+   "match_status": "needs_verification",
+   "medicine_id": null,
+   "medicine_name": null,
+   "needs_check": false,
+   "needs_disambiguation": false,
+   "ocr_confidence": 0.6121,
+   "ocr_uncertain": false,
+   "offers": null,
+   "pack_size": null,
+   "pm_id": 7667,
+   "price": null,
+   "primary_salt": null,
+   "raw_text": "Tap D - risl 60 k",
+   "read_assumption": null,
+   "release_label": null,
+   "release_type": null,
+   "secondary_salt": null,
+   "strength": null,
+   "suggested": false,
+   "suggestion": null,
+   "user_entered": null,
+   "user_unmatched": false,
+   "verification_decision": null,
+   "verification_history": [],
+   "verification_label": "Not identified yet – needs your input.",
+   "verification_reason": null,
+   "verification_reasons": [
+    "No product on file resembles this text. It may have been misread, or the brand may not be in the dataset.",
+    "The text of this line was read with low confidence (61%), so it may not say what is written on the prescription."
+   ],
+   "verification_status": "pending_verification"
+  },
+  {
+   "allergy_alert": false,
+   "allergy_alert_text": null,
+   "alternatives_notes": null,
+   "brand_unspecified": false,
+   "closest_guesses": [
+    {
+     "composition": "Cefuroxime (500mg) + Linezolid (600mg)",
+     "form": "Tablet",
+     "manufacturer": "Torrent Pharmaceuticals Ltd",
+     "medicine_id": 122733,
+     "medicine_name": "Linox XT Tablet",
+     "reasons": [
+      "The name as read is only similar to this product, not the same. The text may have been misread, or the brand may not be in the dataset.",
+      "The similarity (87%) is below the 90% needed to accept a look-alike without a person checking."
+     ],
+     "release_type": null,
+     "score": 0.8667,
+     "strength": "500mg"
+    },
+    {
+     "composition": "Linezolid (600mg)",
+     "form": "Tablet",
+     "manufacturer": "Muffin Biotech",
+     "medicine_id": 128490,
+     "medicine_name": "Linorex Tablet",
+     "reasons": [
+      "The name as read is only similar to this product, not the same. The text may have been misread, or the brand may not be in the dataset.",
+      "The similarity (82%) is below the 90% needed to accept a look-alike without a person checking."
+     ],
+     "release_type": null,
+     "score": 0.8235,
+     "strength": "600mg"
+    },
+    {
+     "composition": "Linezolid (600mg)",
+     "form": "Tablet",
+     "manufacturer": "Pinarc Life Sciences",
+     "medicine_id": 127522,
+     "medicine_name": "Linopin Tablet",
+     "reasons": [
+      "The name as read is only similar to this product, not the same. The text may have been misread, or the brand may not be in the dataset.",
+      "The similarity (75%) is below the 90% needed to accept a look-alike without a person checking."
+     ],
+     "release_type": null,
+     "score": 0.7529,
+     "strength": "600mg"
+    }
+   ],
+   "composition": null,
+   "composition_incomplete": null,
+   "confirmation_conflicts": [],
+   "confirmed_with_conflicts": false,
+   "display_strength": null,
+   "dosage": null,
+   "duration": "30 days",
+   "flag_reasons": [],
+   "form": null,
+   "form_conflict": false,
+   "frequency": null,
+   "imported_at": null,
+   "instructions": {
+    "dose": null,
+    "duration": "30 days",
+    "duration_days": 30,
+    "duration_unreadable": false,
+    "frequency": null,
+    "schedule": null,
+    "schedule_certainty": null,
+    "slots": null,
+    "sources": [
+     "T. Linogen . XT",
+     "X 30d"
+    ],
+    "text": null,
+    "timing": null
+   },
+   "interaction_label": "Not checked – this line hasn't been identified yet.",
+   "interaction_severity": null,
+   "interaction_status": "interaction_data_not_available",
+   "is_discontinued": null,
+   "manufacturer": null,
+   "match_confidence": "0.8667",
+   "match_options": [],
+   "match_status": "needs_verification",
+   "medicine_id": null,
+   "medicine_name": null,
+   "needs_check": false,
+   "needs_disambiguation": false,
+   "ocr_confidence": 0.8252,
+   "ocr_uncertain": false,
+   "offers": null,
+   "pack_size": null,
+   "pm_id": 7668,
+   "price": null,
+   "primary_salt": null,
+   "raw_text": "T. Linogen . XT",
+   "read_assumption": null,
+   "release_label": null,
+   "release_type": null,
+   "secondary_salt": null,
+   "strength": null,
+   "suggested": false,
+   "suggestion": null,
+   "user_entered": null,
+   "user_unmatched": false,
+   "verification_decision": null,
+   "verification_history": [],
+   "verification_label": "Not identified yet – only look-alike products were found. Please check them against your prescription.",
+   "verification_reason": null,
+   "verification_reasons": [
+    "The name as read is only similar to this product, not the same. The text may have been misread, or the brand may not be in the dataset.",
+    "The similarity (87%) is below the 90% needed to accept a look-alike without a person checking."
+   ],
+   "verification_status": "pending_verification"
+  },
+  {
+   "allergy_alert": false,
+   "allergy_alert_text": null,
+   "alternatives_notes": null,
+   "brand_unspecified": false,
+   "closest_guesses": [
+    {
+     "composition": "Domperidone (30mg) + Pantoprazole (40mg)",
+     "form": "Capsule",
+     "manufacturer": "Alkem Laboratories Ltd",
+     "medicine_id": 173579,
+     "medicine_name": "Pan-D Capsule PR",
+     "reasons": [
+      "Without the number 100 this product fits the name. 100 may be a dose schedule (1-0-0) read as digits, not a strength, but this product has no such strength, so only you can say.",
+      "The similarity (71%) is below the 90% needed to accept a look-alike without a person checking.",
+      "The line points to a tablet but this product is a capsule."
+     ],
+     "release_type": "pr",
+     "score": 0.7115,
+     "strength": "30mg"
+    },
+    {
+     "composition": "Aceclofenac (100mg) + Paracetamol (325mg)",
+     "form": "Tablet",
+     "manufacturer": "Group Pharmaceuticals Ltd",
+     "medicine_id": 177699,
+     "medicine_name": "Panif Tablet",
+     "reasons": [
+      "The name as read is only similar to this product, not the same. The text may have been misread, or the brand may not be in the dataset.",
+      "The similarity (66%) is below the 90% needed to accept a look-alike without a person checking."
+     ],
+     "release_type": null,
+     "score": 0.6571,
+     "strength": "100mg"
+    }
+   ],
+   "composition": null,
+   "composition_incomplete": null,
+   "confirmation_conflicts": [],
+   "confirmed_with_conflicts": false,
+   "display_strength": null,
+   "dosage": null,
+   "duration": "7 days",
+   "flag_reasons": [],
+   "form": null,
+   "form_conflict": false,
+   "frequency": "Possibly 1-0-0 (digits read as 100)",
+   "imported_at": null,
+   "instructions": {
+    "dose": null,
+    "duration": "7 days",
+    "duration_days": 7,
+    "duration_unreadable": false,
+    "frequency": "Once daily",
+    "schedule": "1-0-0",
+    "schedule_certainty": "digits_run_together",
+    "slots": {
+     "afternoon": 0.0,
+     "morning": 1.0,
+     "night": 0.0
+    },
+    "sources": [
+     "T. pan - D 100",
+     "X - 7 dys"
+    ],
+    "text": "possibly 1-0-0: morning (the digits were read as “100”; check the prescription)",
+    "timing": null
+   },
+   "interaction_label": "Not checked – this line hasn't been identified yet.",
+   "interaction_severity": null,
+   "interaction_status": "interaction_data_not_available",
+   "is_discontinued": null,
+   "manufacturer": null,
+   "match_confidence": "0.7115",
+   "match_options": [],
+   "match_status": "needs_verification",
+   "medicine_id": null,
+   "medicine_name": null,
+   "needs_check": false,
+   "needs_disambiguation": false,
+   "ocr_confidence": 0.6533,
+   "ocr_uncertain": false,
+   "offers": null,
+   "pack_size": null,
+   "pm_id": 7669,
+   "price": null,
+   "primary_salt": null,
+   "raw_text": "T. pan - D 100",
+   "read_assumption": null,
+   "release_label": null,
+   "release_type": null,
+   "secondary_salt": null,
+   "strength": null,
+   "suggested": true,
+   "suggestion": {
+    "medicine_id": 173579,
+    "medicine_name": "Pan-D Capsule PR",
+    "score": 0.7115
+   },
+   "user_entered": null,
+   "user_unmatched": false,
+   "verification_decision": null,
+   "verification_history": [],
+   "verification_label": "Suggested: Pan-D Capsule PR. The name matches what was read, but the strength, form or the way the text was read still need your check.",
+   "verification_reason": null,
+   "verification_reasons": [
+    "Without the number 100 this product fits the name. 100 may be a dose schedule (1-0-0) read as digits, not a strength, but this product has no such strength, so only you can say.",
+    "The similarity (71%) is below the 90% needed to accept a look-alike without a person checking.",
+    "The line points to a tablet but this product is a capsule.",
+    "The text of this line was read with low confidence (65%), so it may not say what is written on the prescription."
+   ],
+   "verification_status": "pending_verification"
+  }
+ ],
+ "image_quality": {
+  "brightness": 238.7,
+  "checked": [
+   "size",
+   "sharpness",
+   "brightness",
+   "contrast"
+  ],
+  "contrast": 19.2,
+  "height": 900,
+  "sharpness": 52.8,
+  "warnings": [],
+  "width": 700
+ },
+ "notes": [
+  {
+   "kind": "hindi_note",
+   "possible_meaning": "morning, after food",
+   "text": "सुबह खाने बाद",
+   "uncertain": false
+  },
+  {
+   "kind": "instruction",
+   "possible_meaning": null,
+   "text": "#xillary temperature monitoring",
+   "uncertain": false
+  }
+ ],
+ "ocr_result": {
+  "confidence_score": "0.77",
+  "extracted_text": "MEDICAL ADVISE :\nसुबह खाने बाद\nT Lincont 100\nx30dys\nT shel cal soong 0-1-0\n730\nTap D - risl 60 k\nOnce in a week f Sweets\nT. Linogen . XT\nX 30d\nT. pan - D 100\nX - 7 dys\n#xillary temperature monitoring\nSignath Prashanth Mreated Dobe S Patil , MD\nSignature Consultant KMC of Superintendent Regn General . No : Medicine 91823 of\nSBMJ Hospital",
+  "line_results": [
+   {
+    "confidence": 0.9888,
+    "text": "MEDICAL ADVISE :",
+    "uncertain": false
+   },
+   {
+    "confidence": 0.8859,
+    "text": "सुबह खाने बाद",
+    "uncertain": false
+   },
+   {
+    "confidence": 0.6269,
+    "text": "T Lincont 100",
+    "uncertain": false
+   },
+   {
+    "confidence": 0.534,
+    "text": "x30dys",
+    "uncertain": true
+   },
+   {
+    "confidence": 0.6952,
+    "text": "T shel cal soong 0-1-0",
+    "uncertain": true
+   },
+   {
+    "confidence": 0.7971,
+    "text": "730",
+    "uncertain": false
+   },
+   {
+    "confidence": 0.6121,
+    "text": "Tap D - risl 60 k",
+    "uncertain": true
+   },
+   {
+    "confidence": 0.712,
+    "text": "Once in a week f Sweets",
+    "uncertain": true
+   },
+   {
+    "confidence": 0.8252,
+    "text": "T. Linogen . XT",
+    "uncertain": false
+   },
+   {
+    "confidence": 0.8657,
+    "text": "X 30d",
+    "uncertain": false
+   },
+   {
+    "confidence": 0.6533,
+    "text": "T. pan - D 100",
+    "uncertain": true
+   },
+   {
+    "confidence": 0.48,
+    "text": "X - 7 dys",
+    "uncertain": true
+   },
+   {
+    "confidence": 0.8603,
+    "text": "#xillary temperature monitoring",
+    "uncertain": false
+   },
+   {
+    "confidence": 0.8052,
+    "text": "Signath Prashanth Mreated Dobe S Patil , MD",
+    "uncertain": true
+   },
+   {
+    "confidence": 0.9827,
+    "text": "Signature Consultant KMC of Superintendent Regn General . No : Medicine 91823 of",
+    "uncertain": false
+   },
+   {
+    "confidence": 0.9801,
+    "text": "SBMJ Hospital",
+    "uncertain": false
+   }
+  ],
+  "ocr_id": 453,
+  "prescription_id": 4163,
+  "processed_date": "Sun, 18 Oct 2026 19:48:36 GMT"
+ },
+ "prescription": {
+  "prescription_id": 4163,
+  "prescription_name": null,
+  "prescription_type": null,
+  "status": "processed",
+  "symptoms": null,
+  "upload_date": "Sun, 18 Oct 2026 19:48:36 GMT",
+  "user_id": 0
+ },
+ "price_comparison": [],
+ "recommendations": [],
+ "timeline": {
+  "groups": [],
+  "has_content": true,
+  "not_identified": [
+   {
+    "duration": "for 30 days",
+    "pm_id": 7665,
+    "possible": true,
+    "read_as": "possibly 1-0-0: morning (the digits were read as “100”; check the prescription)",
+    "source_text": "T Lincont 100"
+   },
+   {
+    "duration": "duration not written",
+    "pm_id": 7666,
+    "possible": false,
+    "read_as": "0-1-0: afternoon",
+    "source_text": "T shel cal soong 0-1-0"
+   },
+   {
+    "duration": "duration not written",
+    "pm_id": 7667,
+    "possible": false,
+    "read_as": "Once weekly",
+    "source_text": "Tap D - risl 60 k"
+   },
+   {
+    "duration": "for 30 days",
+    "pm_id": 7668,
+    "possible": false,
+    "read_as": null,
+    "source_text": "T. Linogen . XT"
+   },
+   {
+    "duration": "for 7 days",
+    "pm_id": 7669,
+    "possible": true,
+    "read_as": "possibly 1-0-0: morning (the digits were read as “100”; check the prescription)",
+    "source_text": "T. pan - D 100"
+   }
+  ],
+  "slots": []
+ }
+}

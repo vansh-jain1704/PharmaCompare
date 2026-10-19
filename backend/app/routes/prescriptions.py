@@ -19,21 +19,25 @@ from app.models.prescription_model import (
 from app.models.medicine_model import (
     save_prescription_medicine,
     get_prescription_medicines,
-    search_medicines_for_picker,
+    search_medicines_with_mode,
     update_prescription_medicine_match,
+    mark_prescription_medicine_unmatched,
+    save_user_entered_details,
     get_prescription_medicine,
     delete_prescription_medicine,
     get_medicine_by_id,
 )
+from app.models import verification_log_model
 from app.models.safety_model import get_findings, get_analysis_summary, clear_findings
 from app.models.price_model import clear_price_comparison
 from app.models.recommendation_model import get_recommendations, clear_recommendations
 from app.services.ocr_service import extract_text
 from app.services.cloud_ocr_service import redact_secrets, redacted_traceback
 from app.services.release_type import RELEASE_LABELS
-from app.services.medicine_matching_service import match_line
-from app.services.dosage_parser import parse_instructions
-from app.services.smart_report_service import build_report_pdf, prescription_title, report_path_for
+from app.services.medicine_matching_service import match_line, assess_confirmation, MANUAL_ENTRY_TEXT
+from app.services.dosage_parser import parse_dosage, parse_duration, parse_frequency, parse_instructions
+from app.services import data_sources_service, data_validation_service, image_quality_service, instruction_service, price_provenance_service, manual_entry_service, offer_service, prescription_notes_service, report_summary_service, timeline_service
+from app.services.smart_report_service import build_report_pdf, collect_report_data, prescription_title, report_path_for
 from app.services import medicine_explainer_service, medicine_safety_service
 from app.models.user_model import get_user_allergies
 from app.models.report_model import save_report
@@ -84,6 +88,19 @@ def _allowed_file(filename):
     return ext if ext in Config.ALLOWED_EXTENSIONS else None
 
 
+def _options_to_store(result):
+    """
+    What goes in Prescription_Medicines.match_options for one matcher result: the several close matches a
+    person must choose between, or - for a line that could only be matched to look-alikes - those look-alikes
+    with the reasons they were not accepted, so the Verify screen can show them later. Never a confirmation.
+    """
+    if result.get("needs_disambiguation"):
+        return result.get("options")
+    if result.get("guesses"):
+        return {"kind": medicine_safety_service.CLOSEST_GUESSES_KIND, "candidates": result["guesses"]}
+    return None
+
+
 def _run_medicine_detection(prescription_id, ocr_lines):
     """
     Runs Medicine Detection over every OCR line and records the outcome.
@@ -94,6 +111,7 @@ def _run_medicine_detection(prescription_id, ocr_lines):
     skipped entirely - never stored as a fake "medicine".
     """
     detected = []
+    results = []
     for line in ocr_lines:
         text = line["text"].strip()
         if not text:
@@ -101,12 +119,22 @@ def _run_medicine_detection(prescription_id, ocr_lines):
         result = match_line(text)
         if result["status"] == "skipped":
             continue
+        results.append((text, result))
 
+    # Dosing is often written BELOW the name and comes back as a separate OCR line ("T Lincont 100" / "x30dys"): an
+    # instruction-only line is attached to the medicine line above it. Only what the prescription states is read.
+    attached = instruction_service.attach([text for text, _ in results], ocr_lines, lambda t: True)
+
+    for text, result in results:
         medicine = result["medicine"]
         medicine_id = medicine["medicine_id"] if result["status"] == "matched" else None
-        # Read straight off the same printed line as the medicine - only
-        # whatever the prescription actually states, never a default.
-        dosage, frequency, duration = parse_instructions(text)
+        merged = attached.get(text, {}).get("instructions") or instruction_service.parse(text)
+        if medicine_id:                       # digits that are really the product's own strength are not a schedule
+            merged = instruction_service.drop_schedule_that_is_a_strength(merged, instruction_service.owned_numbers(medicine))
+        dosage, frequency, duration = instruction_service.to_columns(merged)
+        # the plain-English patterns, as before (only these: parse_instructions also carries the reading above)
+        old_dosage, old_frequency, old_duration = parse_dosage(text), parse_frequency(text), parse_duration(text)
+        dosage, frequency, duration = dosage or old_dosage, frequency or old_frequency, duration or old_duration
         pm_id = save_prescription_medicine(
             prescription_id,
             medicine_id,
@@ -116,7 +144,7 @@ def _run_medicine_detection(prescription_id, ocr_lines):
             dosage=dosage,
             frequency=frequency,
             duration=duration,
-            match_options=result.get("options") if result.get("needs_disambiguation") else None,
+            match_options=_options_to_store(result),
         )
         detected.append({
             "pm_id": pm_id,
@@ -149,6 +177,57 @@ def _run_medicine_detection(prescription_id, ocr_lines):
     return detected
 
 
+def _public_decision(decision):
+    """The part of a stored verification decision the screen needs (who is implied: the signed-in owner)."""
+    return {
+        "decision": decision.get("decision"),
+        "decided_at": decision.get("decided_at"),
+        "medicine_id": decision.get("medicine_id"),
+        "medicine_name": decision.get("medicine_name"),
+        "warnings_acknowledged": bool(decision.get("warnings_acknowledged")),
+        "warnings": decision.get("warnings") or [],
+        "previous_status": decision.get("previous_status"),
+        "raw_text": decision.get("raw_text"),
+    }
+
+
+def _stored_suggestions(pm_row):
+    """The candidates a line was carrying when a person decided on it, as [{medicine_id, medicine_name, score}]."""
+    raw = pm_row.get("match_options")
+    try:
+        decoded = raw if isinstance(raw, (list, dict)) else json.loads(raw) if raw else None
+    except (TypeError, ValueError):
+        return []
+    if isinstance(decoded, dict):
+        decoded = decoded.get("candidates")
+    return [{"medicine_id": o.get("medicine_id"), "medicine_name": o.get("medicine_name"), "score": o.get("score")}
+            for o in (decoded or []) if isinstance(o, dict)]
+
+
+def _log_verification(user_id, prescription_id, pm_row, decision, medicine=None, **extra):
+    """Records one decision in the review trail. A failure here is logged, never hidden from the response."""
+    try:
+        verification_log_model.log_decision(
+            int(user_id), prescription_id, pm_row["pm_id"] if pm_row else extra.pop("pm_id", None), decision,
+            raw_text=pm_row["raw_text"] if pm_row else extra.pop("raw_text", None),
+            medicine_id=medicine["medicine_id"] if medicine else None,
+            medicine_name=medicine["medicine_name"] if medicine else None,
+            previous_status=pm_row["match_status"] if pm_row else None,
+            previous_confidence=float(pm_row["match_confidence"]) if pm_row and pm_row.get("match_confidence") is not None else None,
+            suggestions=_stored_suggestions(pm_row) if pm_row else [],
+            **extra,
+        )
+        return True
+    except Exception:
+        current_app.logger.exception("Could not record the verification decision for prescription %s", prescription_id)
+        return False
+
+
+def _allergy_check(user_id):
+    """What the allergy check had to work with (see medicine_safety_service.allergy_check_status)."""
+    return medicine_safety_service.allergy_check_status(get_user_allergies(user_id))
+
+
 def _attach_safety(entries, prescription_id, user_id):
     """
     Adds the per-medicine safety fields (interaction status, verification
@@ -159,8 +238,19 @@ def _attach_safety(entries, prescription_id, user_id):
     rows = get_prescription_medicines(prescription_id)
     ocr = get_ocr_result_by_prescription(prescription_id) or {}
     annotations = medicine_safety_service.annotate(rows, get_user_allergies(user_id), ocr.get("line_results") or [])
+    identified_ids = [e.get("medicine_id") if e.get("medicine_id") is not None else (e.get("medicine") or {}).get("medicine_id")
+                      for e in entries if (e.get("match_status") or e.get("status")) in ("matched", "user_confirmed")]
+    offers = offer_service.offers_for_medicines(identified_ids)
+    history = {}
+    for decision in verification_log_model.get_decisions(prescription_id):
+        history.setdefault(decision.get("pm_id"), []).append(_public_decision(decision))
     for entry in entries:
         entry.update(annotations.get(entry.get("pm_id"), {}))
+        past = history.get(entry.get("pm_id"), [])
+        mid = entry.get("medicine_id") if entry.get("medicine_id") is not None else (entry.get("medicine") or {}).get("medicine_id")
+        entry["offers"] = offers.get(mid) if (entry.get("match_status") or entry.get("status")) in ("matched", "user_confirmed") else None
+        entry["verification_history"] = past                                   # every decision on this line, oldest first
+        entry["verification_decision"] = past[-1] if past else None            # the latest one
     return entries
 
 
@@ -218,6 +308,8 @@ def upload_prescription():
         os.remove(stored_path)
         return jsonify({"error": "database error", "details": str(e)}), 500
 
+    quality = image_quality_service.assess(stored_path, ext)        # warnings only: never blocks, never changes the OCR
+
     try:
         result = extract_text(stored_path, ext)
     except Exception as e:
@@ -247,6 +339,7 @@ def upload_prescription():
             "prescription_type": prescription_type,
             "status": "needs_reupload",
             "confidence": result["confidence"],
+            "image_quality": quality,
         }), 422
 
     update_prescription_status(prescription_id, "processed")
@@ -294,8 +387,14 @@ def upload_prescription():
         "extracted_text": result["text"],
         "confidence": result["confidence"],
         "ocr_provider": result.get("provider"),
+        "image_quality": quality,
         "lines": result["lines"],
+        "notes": prescription_notes_service.notes_from_ocr_lines(result["lines"]),
+        "live_data": data_sources_service.live_data(),
+        "price_basis": price_provenance_service.dataset_basis(),
+        "allergy_check": _allergy_check(user_id),
         "detected_medicines": detected_medicines,
+        "timeline": timeline_service.build_timeline(timeline_service.entries_from_detected(detected_medicines)),
         "clinical_analysis": clinical_analysis,
         "price_comparison": price_comparison,
         "recommendations": recommendations,
@@ -330,13 +429,20 @@ def get_prescription(prescription_id):
     findings = get_findings(prescription_id)
     price_rows = get_annotated_price_comparison(prescription_id)
     recommendation_rows = get_recommendations(prescription_id)
+    quality = image_quality_service.assess(prescription["image_path"], os.path.splitext(prescription["image_path"])[1].lstrip("."))
     prescription["filename"] = os.path.basename(prescription["image_path"])
     del prescription["image_path"]
 
     return jsonify({
         "prescription": prescription,
+        "image_quality": quality,
         "ocr_result": ocr_result,
+        "notes": prescription_notes_service.notes_from_ocr_lines((ocr_result or {}).get("line_results") or []),
+        "live_data": data_sources_service.live_data(),
+        "price_basis": price_provenance_service.dataset_basis(),
+        "allergy_check": _allergy_check(user_id),
         "detected_medicines": detected_medicines,
+        "timeline": timeline_service.build_timeline(timeline_service.entries_from_detected(detected_medicines)),
         "clinical_analysis": {
             "risk_level": analysis_summary["risk_level"] if analysis_summary else None,
             "summary": analysis_summary["summary"] if analysis_summary else None,
@@ -374,8 +480,13 @@ def search_medicines():
     if len(term) < 2:
         return jsonify({"medicines": [], "message": "type at least 2 characters"}), 200
 
-    rows = search_medicines_for_picker(term)
+    rows, used_fallback = search_medicines_with_mode(term)
     return jsonify({
+        # True when nothing matched what was typed and these are only products whose names START the same way:
+        # different medicines, which the screen must say so rather than present as matches
+        "fallback": used_fallback,
+        "fallback_note": (f"No product on file matches “{term}”. These are products whose names start with similar "
+                          "letters - they are different medicines, so check each one carefully.") if used_fallback else None,
         "medicines": [{
             "medicine_id": r["medicine_id"],
             "medicine_name": r["medicine_name"],
@@ -391,6 +502,8 @@ def search_medicines():
             "release_type": r.get("release_type"),
             "release_label": RELEASE_LABELS.get(r.get("release_type"), "modified release") if r.get("release_type") else None,
             "composition_incomplete": bool(r.get("composition_incomplete")),
+            # where the product's own fields are missing or do not fit together (a reason to check, never a correction)
+            "data_notes": data_validation_service.validate_medicine(r),
         } for r in rows],
         "count": len(rows),
     }), 200
@@ -448,12 +561,17 @@ def add_medicine_manually(prescription_id):
     pm_id = save_prescription_medicine(
         prescription_id,
         medicine_id,
-        raw_text=dosage_text or "Added manually",
+        raw_text=dosage_text or MANUAL_ENTRY_TEXT,
         match_confidence=None,
         match_status="user_confirmed",
         dosage=dosage,
         frequency=frequency,
         duration=duration,
+    )
+
+    audit_logged = _log_verification(
+        user_id, prescription_id, None, verification_log_model.DECISION_ADDED_MANUALLY, medicine,
+        pm_id=pm_id, raw_text=dosage_text or MANUAL_ENTRY_TEXT, warnings=[], warnings_acknowledged=False,
     )
 
     try:
@@ -481,9 +599,15 @@ def add_medicine_manually(prescription_id):
 def correct_detected_medicine(prescription_id, pm_id):
     """
     Lets the user say what a detected line actually is, when OCR misread it
-    or the matcher picked the wrong product. The line's own text is left
+    or the matcher could not settle it. The line's own text is left
     exactly as it was read - only which medicine it points at changes - and
     the whole downstream analysis is regenerated from the correction.
+
+    A choice that clearly conflicts with what the line says (a different name, form, strength, ingredient or
+    release type) is NOT saved straight away: the response is 409 with the conflicts in plain language, and the
+    person has to send the same request again with "acknowledge_warnings": true. Even then the line is only
+    recorded as "confirmed by you" - never as proof that the product is the one written or medically equivalent.
+    Every saved decision is written to the review trail.
     """
     user_id = get_jwt_identity()
     prescription = get_prescription_by_id(prescription_id)
@@ -503,11 +627,30 @@ def correct_detected_medicine(prescription_id, pm_id):
     if not medicine:
         return jsonify({"error": "medicine not found"}), 404
 
+    findings = assess_confirmation(pm_row["raw_text"], medicine)
+    conflicts = [f for f in findings if f["severity"] == "conflict"]
+    acknowledged = data.get("acknowledge_warnings") is True
+    if conflicts and not acknowledged:
+        return jsonify({
+            "error": "confirmation_needs_acknowledgement",
+            "message": ("Please check this before confirming: the prescription line and the product you chose differ. "
+                        "Confirming only records your decision - it does not show that the product is the one "
+                        "written or that it is medically equivalent."),
+            "pm_id": pm_id,
+            "medicine_id": medicine_id,
+            "medicine_name": medicine["medicine_name"],
+            "warnings": findings,
+        }), 409
+
     # The row's existence is already established above. Don't gate on the
     # UPDATE's affected-row count: MySQL reports rows CHANGED, not matched,
     # so re-confirming the same medicine legitimately affects 0 rows and
     # must still succeed rather than look like a missing record.
     update_prescription_medicine_match(pm_id, medicine_id)
+    audit_logged = _log_verification(
+        user_id, prescription_id, pm_row, verification_log_model.DECISION_CONFIRMED, medicine,
+        warnings=findings, warnings_acknowledged=bool(conflicts and acknowledged),
+    )
 
     try:
         _rerun_analysis(prescription_id)
@@ -519,14 +662,105 @@ def correct_detected_medicine(prescription_id, pm_id):
             "message": "medicine corrected, but re-analysis failed",
             "reanalysis_failed": True,
             "pm_id": pm_id,
+            "audit_logged": audit_logged,
         }), 200
 
     return jsonify({
-        "message": "medicine corrected and analysis updated",
+        "message": "medicine confirmed by you and analysis updated",
         "pm_id": pm_id,
         "medicine_id": medicine_id,
         "medicine_name": medicine["medicine_name"],
+        "warnings": findings,
+        "warnings_acknowledged": bool(conflicts and acknowledged),
+        "audit_logged": audit_logged,
     }), 200
+
+
+@prescriptions_bp.route(
+    "/api/prescriptions/<int:prescription_id>/medicines/<int:pm_id>/unmatched", methods=["POST"]
+)
+@jwt_required()
+def mark_medicine_unmatched(prescription_id, pm_id):
+    """
+    The person reviewed this line and says it is not a medicine PharmaCompare can identify (or not a medicine
+    at all). The line keeps its OCR text and the candidates it was shown; it points at no product, so it is never
+    analysed or priced, and anything derived from an earlier confirmation of it is removed.
+    """
+    user_id = get_jwt_identity()
+    prescription = get_prescription_by_id(prescription_id)
+    if not prescription or str(prescription["user_id"]) != str(user_id):
+        return jsonify({"error": "prescription not found"}), 404
+
+    pm_row = get_prescription_medicine(pm_id)
+    if not pm_row or pm_row["prescription_id"] != prescription_id:
+        return jsonify({"error": "prescription medicine not found"}), 404
+
+    mark_prescription_medicine_unmatched(pm_id)
+    audit_logged = _log_verification(
+        user_id, prescription_id, pm_row, verification_log_model.DECISION_UNMATCHED, None,
+        warnings=[], warnings_acknowledged=False,
+    )
+
+    try:
+        _rerun_analysis(prescription_id)
+    except Exception:
+        current_app.logger.exception("Re-analysis failed after marking pm %s as not identified", pm_id)
+        return jsonify({"message": "line marked as not identified, but re-analysis failed",
+                        "reanalysis_failed": True, "pm_id": pm_id, "audit_logged": audit_logged}), 200
+
+    return jsonify({"message": "line marked as not identified and analysis updated", "pm_id": pm_id,
+                    "audit_logged": audit_logged}), 200
+
+
+@prescriptions_bp.route(
+    "/api/prescriptions/<int:prescription_id>/medicines/<int:pm_id>/details", methods=["POST"]
+)
+@jwt_required()
+def enter_medicine_details(prescription_id, pm_id):
+    """
+    The person types in the medicine for a line the dataset cannot identify: name, strength, form, schedule and duration as they read
+    them from the prescription. It is stored as "entered by you", points at no product, and is never priced, compared or safety-checked.
+    The line keeps its OCR text and the look-alikes it was shown.
+    """
+    user_id = get_jwt_identity()
+    prescription = get_prescription_by_id(prescription_id)
+    if not prescription or str(prescription["user_id"]) != str(user_id):
+        return jsonify({"error": "prescription not found"}), 404
+
+    pm_row = get_prescription_medicine(pm_id)
+    if not pm_row or pm_row["prescription_id"] != prescription_id:
+        return jsonify({"error": "prescription medicine not found"}), 404
+
+    try:
+        details = manual_entry_service.validate(request.get_json(silent=True))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    save_user_entered_details(pm_id, manual_entry_service.merge_into_options(pm_row.get("match_options"), details), details["schedule"], details["duration"])
+    audit_logged = _log_verification(
+        user_id, prescription_id, pm_row, verification_log_model.DECISION_ENTERED_BY_USER, None,
+        warnings=[], warnings_acknowledged=False, entered=details,
+    )
+
+    try:
+        _rerun_analysis(prescription_id)
+    except Exception:
+        current_app.logger.exception("Re-analysis failed after details were entered for pm %s", pm_id)
+        return jsonify({"message": "details saved, but re-analysis failed", "reanalysis_failed": True, "pm_id": pm_id, "audit_logged": audit_logged}), 200
+
+    return jsonify({"message": "details saved and analysis updated", "pm_id": pm_id, "audit_logged": audit_logged}), 200
+
+
+@prescriptions_bp.route("/api/prescriptions/<int:prescription_id>/verification-log", methods=["GET"])
+@jwt_required()
+def get_verification_log(prescription_id):
+    """Every verification decision recorded for this prescription (what was decided, when, and what the person saw)."""
+    user_id = get_jwt_identity()
+    prescription = get_prescription_by_id(prescription_id)
+    if not prescription or str(prescription["user_id"]) != str(user_id):
+        return jsonify({"error": "prescription not found"}), 404
+    decisions = verification_log_model.get_decisions(prescription_id)
+    return jsonify({"prescription_id": prescription_id, "decisions": decisions, "count": len(decisions)}), 200
 
 
 @prescriptions_bp.route(
@@ -561,6 +795,22 @@ def remove_detected_medicine(prescription_id, pm_id):
                         "reanalysis_failed": True, "pm_id": pm_id}), 200
 
     return jsonify({"message": "line removed and analysis updated", "pm_id": pm_id}), 200
+
+
+@prescriptions_bp.route("/api/prescriptions/<int:prescription_id>/summary", methods=["GET"])
+@jwt_required()
+def report_summary(prescription_id):
+    """
+    The plain-language summary of this analysis, written by Gemini when it is set up and its answer passes the checks, otherwise by
+    PharmaCompare from the same facts. The response always says which (`source`, `label`). Only medicine names, strengths, schedules
+    and counts leave the server, and only when Gemini is configured.
+    """
+    user_id = get_jwt_identity()
+    prescription = get_prescription_by_id(prescription_id)
+    if not prescription or str(prescription["user_id"]) != str(user_id):
+        return jsonify({"error": "prescription not found"}), 404
+    data = collect_report_data(prescription_id, prescription)
+    return jsonify({"prescription_id": prescription_id, **report_summary_service.summarise(data)}), 200
 
 
 @prescriptions_bp.route("/api/prescriptions/<int:prescription_id>/report", methods=["GET"])

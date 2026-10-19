@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpDown, Factory, Pill, Search, SlidersHorizontal, X } from "lucide-react";
+import { ArrowUpDown, Pill, Search, SlidersHorizontal, X } from "lucide-react";
 import Page from "../components/Page";
 import MedicineDrawer from "../components/MedicineDrawer";
 import ExplainDialog from "../components/ui/ExplainDialog";
@@ -7,7 +7,7 @@ import { AvailabilityDisclaimer } from "../components/ui/AvailabilityStatus";
 import { EmptyState, ErrorState } from "../components/ui/States";
 import { searchMedicines } from "../api/prescriptionApi";
 import { getErrorMessage } from "../api/getErrorMessage";
-import { rupees } from "../utils/format";
+import MedicineResultCard from "../components/MedicineResultCard";
 
 const SUGGESTIONS = ["Dolo 650", "Paracetamol", "Azee 500", "Pan-D", "Zerodol-P", "Amoxicillin"];
 const PRICE_CAPS = [50, 100, 250, 500];
@@ -155,18 +155,7 @@ export default function MedicineSearch() {
             <section className="panel"><EmptyState title="No results match these filters" message="Loosen a filter to see more." action={<button type="button" className="btn btn-secondary btn-sm" onClick={() => setFilters(NO_FILTERS)}>Clear filters</button>} /></section>
           ) : (
             <div className="med-grid">
-              {visible.map((m, i) => (
-                <button type="button" key={m.medicine_id} className={`med-card rise ${i < 6 ? `d${i % 5 + 1}` : ""}`} onClick={() => setSelected(m)} aria-label={`Open details for ${m.medicine_name}`}>
-                  <span className="med-card-top">
-                    <strong>{m.medicine_name}</strong>
-                    {m.is_discontinued && <span className="pill tone-risk">Discontinued</span>}
-                  </span>
-                  <span className="med-comp">{m.composition || "Composition not on file"}</span>
-                  <span className="med-meta">{[m.strength, m.form].filter(Boolean).join(" · ")}</span>
-                  <span className="med-maker"><Factory size={12} /> {m.manufacturer || "Maker not on file"}</span>
-                  <span className="med-bottom"><b className="num">{rupees(m.price)}</b><span className="med-more">Compare →</span></span>
-                </button>
-              ))}
+              {visible.map((m, i) => <MedicineResultCard key={m.medicine_id} medicine={m} index={i} onOpen={setSelected} />)}
             </div>
           )}
         </div>

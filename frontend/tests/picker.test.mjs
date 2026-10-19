@@ -96,11 +96,14 @@ test("a medicine is confirmed only by the confirm button (static guard)", () => 
 
 test("the analysis table hands the picker the stored candidates for the line being verified", () => {
   const source = read("../src/components/results/MedicineTable.jsx");
-  assert.match(source, /<MedicinePickerDialog[^]*?\ssuggestions=\{[^}]*matchOptions/);
+  assert.match(source, /<MedicinePickerDialog[^]*?\ssuggestions=\{pickerSuggestions\}/);
+  // what it is given: the several close matches, else the stored look-alikes
+  assert.match(source, /pickerSuggestions\s*=[^;]*matchOptions[^;]*closestGuesses/);
 });
 
 test("the About page no longer describes simulated availability", () => {
   const source = read("../src/pages/About.jsx");
   assert.doesNotMatch(source, /simulated/i);
-  assert.match(source, /Stock availability is not tracked/);
+  assert.match(source, /appear only where a pharmacy has reported them/);
+  assert.match(source, /no pharmacy has reported/);
 });

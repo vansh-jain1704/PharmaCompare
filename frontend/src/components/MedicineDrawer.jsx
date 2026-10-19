@@ -1,6 +1,11 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Factory, Pill, Sparkles, TrendingDown, X } from "lucide-react";
 import AvailabilityStatus from "./ui/AvailabilityStatus";
+import PharmacyOffers from "./results/PharmacyOffers";
+import DataNotes from "./results/DataNotes";
+import BuyGenericButton from "./BuyGenericButton";
+import { BUY_GENERIC_NOTE, productBuyGeneric } from "../utils/buyGeneric";
+import { getMedicineOffers } from "../api/prescriptionApi";
 import { rupees } from "../utils/format";
 
 const norm = (s) => (s || "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -18,6 +23,19 @@ export default function MedicineDrawer({ medicine, results, query, onClose, onEx
     document.body.style.overflow = "hidden";
     return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
   }, [onClose]);
+
+  // What pharmacies have reported for this medicine. Kept with the id it was fetched for, so another medicine never shows it.
+  const [fetched, setFetched] = useState(null);
+  const medicineId = medicine?.medicine_id;
+  useEffect(() => {
+    if (medicineId == null) return undefined;
+    let cancelled = false;
+    getMedicineOffers(medicineId)
+      .then((res) => { if (!cancelled) setFetched({ id: medicineId, offers: res.data }); })
+      .catch(() => { if (!cancelled) setFetched({ id: medicineId, offers: null }); });
+    return () => { cancelled = true; };
+  }, [medicineId]);
+  const offers = fetched && fetched.id === medicineId ? fetched.offers : null;
 
   const same = useMemo(() => {
     if (!medicine?.composition) return [];
@@ -42,7 +60,7 @@ export default function MedicineDrawer({ medicine, results, query, onClose, onEx
         <header className="drawer-head">
           <span className="drawer-icon"><Pill size={22} /></span>
           <div className="grow">
-            <h2>{medicine.medicine_name}</h2>
+            <h2>{medicine.medicine_name}<BuyGenericButton verdict={productBuyGeneric(medicine)} /></h2>
             <p className="small muted">{[medicine.strength, medicine.form].filter(Boolean).join(" · ") || "Medicine details"}</p>
           </div>
           <button type="button" className="icon-btn is-bordered" onClick={onClose} aria-label="Close details"><X size={18} /></button>
@@ -55,10 +73,14 @@ export default function MedicineDrawer({ medicine, results, query, onClose, onEx
           </div>
           {medicine.is_discontinued && <span className="pill tone-risk">Discontinued</span>}
         </div>
+        <p className="tiny subtle" style={{ margin: "0 0 var(--s-3)" }}>{offers?.price_basis?.label || "Reference price from a dataset snapshot. Not a live price."}</p>
+
+        <DataNotes notes={medicine.data_notes} />
+        <p className="tiny subtle buy-generic-explained">{BUY_GENERIC_NOTE}</p>
 
         <dl className="facts drawer-facts">
           {facts.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v || "Not on file"}</dd></div>)}
-          <div><dt>Availability</dt><dd><AvailabilityStatus medicine={medicine} discontinued={medicine.is_discontinued} compact /></dd></div>
+          <div><dt>Availability</dt><dd><AvailabilityStatus medicine={medicine} discontinued={medicine.is_discontinued} offers={offers} compact /></dd></div>
         </dl>
 
         <section className="drawer-section">
@@ -84,6 +106,11 @@ export default function MedicineDrawer({ medicine, results, query, onClose, onEx
             <p className="small muted">No other product with this exact composition is in the current results for “{query}”. Search by the salt name to compare makers.</p>
           )}
           <p className="tiny subtle">Compared only against the results shown for your search, not the whole catalogue. Reference-dataset prices, not live pharmacy prices.</p>
+        </section>
+
+        <section className="drawer-section">
+          <h3>At pharmacies (as reported)</h3>
+          <PharmacyOffers offers={offers} />
         </section>
 
         <footer className="drawer-foot">

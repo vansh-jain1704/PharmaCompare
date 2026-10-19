@@ -1,5 +1,6 @@
 import { FileUp, Info, ScanLine, ShieldCheck, Wallet } from "lucide-react";
 import Page from "../components/Page";
+import DataSources from "../components/DataSources";
 import { DEMO_DISCLAIMER } from "../utils/disclaimers";
 
 const STEPS = [
@@ -14,7 +15,8 @@ const LIMITATIONS = [
   ["Dataset gaps", "some medicines (for example Zincovit) are missing from our dataset."],
   ["Match edge cases", "short brand names and combination drugs can sometimes be matched incorrectly; we show a confirmation step when unsure."],
   ["Safety coverage", "not all drug pairs are covered in the interaction database; some results will show \"data not available\"."],
-  ["Prices", "prices come from a community dataset snapshot, not live pharmacy prices."],
+  ["Prices", "the reference price comes from a community dataset snapshot, not a live pharmacy price. Pharmacy prices are shown only when a pharmacy has reported them, and are labelled with their age."],
+  ["Availability", "stock is shown only when a pharmacy has reported it. There is no live stock source built in, so for most medicines no stock status can be shown."],
 ];
 
 export default function About() {
@@ -50,6 +52,12 @@ export default function About() {
       </section>
 
       <section className="about-section rise d2">
+        <h2>Data sources</h2>
+        <p>Every figure comes from one of these. Sizes, dates and quality notes are counted from the data actually loaded.</p>
+        <DataSources />
+      </section>
+
+      <section className="about-section rise d2">
         <h2>Limitations</h2>
         <ul className="bullets">
           {LIMITATIONS.map(([label, text]) => (
@@ -58,7 +66,7 @@ export default function About() {
         </ul>
         <div className="info-line">
           <Info size={14} aria-hidden="true" />
-          <span><strong>Demo notice.</strong> {DEMO_DISCLAIMER} Stock availability is not tracked: the only availability status shown is the dataset's "discontinued" flag.</span>
+          <span><strong>Demo notice.</strong> {DEMO_DISCLAIMER} Pharmacy prices and stock appear only where a pharmacy has reported them, with the time of the report and the feed it came from. Where nothing is shown, no pharmacy has reported, and the only availability status taken from the dataset is its "discontinued" flag.</span>
         </div>
       </section>
     </Page>

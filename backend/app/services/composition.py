@@ -89,3 +89,27 @@ def composition_key(composition):
     "Amoxycillin (500mg) + Clavulanic Acid (125mg)" but not "... (500mg)".
     """
     return re.sub(r"\s+", "", (composition or "").lower())
+
+
+_INGREDIENT_PART_RE = re.compile(r"^\s*(.*?)\s*\((.*)\)\s*$")
+
+
+def display_strength(composition, fallback=None):
+    """
+    The strength to show for a product, from its ingredient list: "500mg" for one ingredient, and
+    "Domperidone 30mg + Pantoprazole 40mg" for a combination. The Medicines.strength column holds only the FIRST
+    ingredient's strength, so a combination shown from it alone ("30mg") understates what the product contains.
+    Returns `fallback` (the stored strength) when the composition cannot be read, and None when there is nothing to show.
+    """
+    parts = [p.strip() for p in re.split(r"\s*\+\s*", composition or "") if p.strip()]
+    shown = []
+    for part in parts:
+        match = _INGREDIENT_PART_RE.match(part)
+        if not match or not match.group(2).strip() or match.group(2).strip().upper() == "NA":
+            return fallback
+        shown.append((match.group(1).strip(), re.sub(r"\s+", "", match.group(2))))
+    if not shown:
+        return fallback
+    if len(shown) == 1:
+        return shown[0][1]
+    return " + ".join(f"{name} {strength}" for name, strength in shown)

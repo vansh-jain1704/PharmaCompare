@@ -66,24 +66,32 @@ function MedicineChoice({ medicine, selected, onSelect }) {
  *
  * `suggestions` are the products the reader found for this line when it could not choose between them.
  * They are listed first, labelled as not confirmed, and selecting one still needs the confirm button.
+ * `reasons` say, in plain language, why the line was not settled. `initialSelection` preselects one product
+ * (still unconfirmed). `onMarkUnmatched` lets the person say the line is none of these.
  */
-export default function MedicinePickerDialog({ open, rawText, currentName, suggestions = [], onCancel, onConfirm, saving }) {
+export default function MedicinePickerDialog({
+  open, rawText, currentName, suggestions = [], reasons = [], initialSelection = null,
+  onCancel, onConfirm, onMarkUnmatched, onEnterDetails, saving,
+}) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [fallbackNote, setFallbackNote] = useState("");
   const inputRef = useRef(null);
 
   useEffect(() => {
     if (!open) return;
     setQuery("");
     setResults([]);
-    setSelected(null);
+    setSelected(initialSelection || null);
     setError("");
+    setFallbackNote("");
+    setLoading(false);
     const id = setTimeout(() => inputRef.current?.focus(), 50);
     return () => clearTimeout(id);
-  }, [open]);
+  }, [open, initialSelection]);   // the parent keeps `initialSelection` in state, so this runs on open or when another product is preselected
 
   // Debounced so typing doesn't fire a request per keystroke.
   useEffect(() => {
@@ -91,6 +99,8 @@ export default function MedicinePickerDialog({ open, rawText, currentName, sugge
     const term = query.trim();
     if (term.length < 2) {
       setResults([]);
+      setFallbackNote("");
+      setLoading(false);                 // no search is running: a cancelled earlier one must not leave "Searching..." behind
       return undefined;
     }
     let cancelled = false;
@@ -100,6 +110,7 @@ export default function MedicinePickerDialog({ open, rawText, currentName, sugge
         const res = await searchMedicines(term);
         if (!cancelled) {
           setResults(res.data.medicines);
+          setFallbackNote(res.data.fallback ? res.data.fallback_note || "" : "");
           setError("");
         }
       } catch (err) {
@@ -152,6 +163,18 @@ export default function MedicinePickerDialog({ open, rawText, currentName, sugge
 
         {error && <div className="alert alert-error">{error}</div>}
 
+        {reasons.length > 0 && !searching && (
+          <div className="alert alert-warn" role="note">
+            <div>
+              <strong>Why this line needs your check</strong>
+              <ul className="bullets" style={{ margin: "0.3rem 0 0" }}>
+                {reasons.map((reason) => <li key={reason}>{reason}</li>)}
+              </ul>
+            </div>
+          </div>
+        )}
+        {fallbackNote && searching && <div className="alert alert-warn" role="note">{fallbackNote}</div>}
+
         <div className="picker-results">
           {showSuggestions && (
             <>
@@ -179,10 +202,24 @@ export default function MedicinePickerDialog({ open, rawText, currentName, sugge
           ))}
         </div>
 
+        <p className="picker-rawtext" style={{ marginBottom: "0.75rem" }}>
+          Confirming records your choice. It does not prove that this is the medicine on your prescription, or that it is
+          medically equivalent to it.
+        </p>
         <div className="modal-actions">
           <button type="button" className="btn btn-ghost" onClick={onCancel} disabled={saving}>
             Cancel
           </button>
+          {rawText && typeof onEnterDetails === "function" && (
+            <button type="button" className="btn btn-secondary" onClick={() => onEnterDetails()} disabled={saving}>
+              Enter details yourself
+            </button>
+          )}
+          {rawText && typeof onMarkUnmatched === "function" && (
+            <button type="button" className="btn btn-secondary" onClick={() => onMarkUnmatched()} disabled={saving}>
+              None of these
+            </button>
+          )}
           <button
             type="button"
             className="btn btn-primary"

@@ -1,4 +1,5 @@
 from app.db import get_connection
+from app.services import price_quality
 from app.services.composition import composition_key
 
 
@@ -26,8 +27,12 @@ def _comparable_filter(primary_salt, secondary_salt, strength, form, release_typ
     return " AND ".join(clauses), params
 
 
+# How many candidates to read before ordering them by the real pack-quantity rule (see find_alternatives).
+PACK_WINDOW = 80
+
+
 def find_alternatives(primary_salt, secondary_salt, strength, form, exclude_medicine_id, limit=10,
-                      release_type=None, composition=None, pack_quantity=None):
+                      release_type=None, composition=None, pack_quantity=None, pack_size=None):
     """
     Finds other products with the same composition (primary + secondary
     salt) and strength and dosage form - the only combination that counts
@@ -52,6 +57,12 @@ def find_alternatives(primary_salt, secondary_salt, strength, form, exclude_medi
     When `pack_quantity` is given, products sold in that same quantity come first
     (cheapest first), then the rest: only a same-quantity price is a fair saving, and
     without this the cheapest ten were almost always strips of a different size.
+
+    The database can only order by a text pattern ("of 15"), which also matches "bottle of 15 ml" for a strip of 15 tablets and
+    "vial of 1 Injection" (a count) for "vial of 1 ml Injection" (a volume). When the prescribed product's `pack_size` text is given,
+    the nearest PACK_WINDOW candidates are therefore re-ordered here by the SAME rule the savings use
+    (price_quality.same_pack_quantity: the quantity AND its kind), so a pack that is not really comparable never takes the
+    place of one that is, and the list is in the order the savings rule would sort it.
     """
     where, params = _comparable_filter(primary_salt, secondary_salt, strength, form, release_type, composition)
     where += " AND medicine_id != %s"
@@ -62,7 +73,7 @@ def find_alternatives(primary_salt, secondary_salt, strength, form, exclude_medi
         qty = int(pack_quantity) if float(pack_quantity).is_integer() else pack_quantity
         order = "(pack_size REGEXP %s) DESC, price ASC"
         params.append(f"of {qty}( |$)")
-    params.append(limit)
+    params.append(PACK_WINDOW if pack_size else limit)
 
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
@@ -76,7 +87,11 @@ def find_alternatives(primary_salt, secondary_salt, strength, form, exclude_medi
                 LIMIT %s""",
             params,
         )
-        return cursor.fetchall()
+        rows = cursor.fetchall()
+        if pack_size:
+            rows.sort(key=lambda r: (not price_quality.same_pack_quantity(pack_size, r["pack_size"]), float(r["price"]), r["medicine_id"]))
+            rows = rows[:limit]
+        return rows
     finally:
         cursor.close()
         conn.close()

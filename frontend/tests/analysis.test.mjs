@@ -121,3 +121,70 @@ test("only comparable alternatives are presented as the saving", () => {
   assert.ok(telma.allAlternatives.filter((a) => !a.same_pack_quantity).every((a) => !a.counts_for_savings && a.savings_percent == null));
   assert.ok(telma.topAlternative);
 });
+
+// ---- the review states (real decisions made through the real routes when the fixture was written) -------------------------
+test("a match whose form differs from the line reads 'Check match' and earns no saving, on screen and in the PDF", () => {
+  const row = byRaw["Cap Omez 20"];
+  const pdf = pdfByRaw["Cap Omez 20"];
+  assert.equal(row.formConflict, true);
+  assert.equal(pdf.form_conflict, true);
+  assert.equal(rowStatus(row).text, "Check match");
+  assert.equal(pdf.status, "Check match");
+  assert.equal(summarizeSavings([row]).savableCount, 0);
+  assert.equal(pdf.saving, null);
+  assert.equal(pdf.reason, "Not counted: check match first");
+});
+
+test("a product confirmed despite conflicts keeps the person's decision but earns no saving, on screen and in the PDF", () => {
+  const row = byRaw["T Lincont 100"];
+  const pdf = pdfByRaw["T Lincont 100"];
+  assert.equal(rowStatus(row).text, "Confirmed");
+  assert.equal(pdf.status, "Confirmed");
+  assert.equal(confidenceText(row), "Confirmed by you");
+  assert.equal(row.confirmedWithConflicts, true);
+  assert.equal(pdf.confirmed_with_conflicts, true);
+  assert.ok(row.confirmationConflicts.length >= 2);
+  assert.equal(row.savingAmount != null, true, "the comparison itself is still shown");
+  assert.equal(summarizeSavings([row]).savableCount, 0, "but it is not counted");
+  assert.equal(pdf.saving, null);
+  assert.equal(pdf.reason, "Not counted: confirmed despite differences from the line");
+  assert.equal(row.doctorMedicine.medicine_name, "Zincold Syrup");
+  assert.equal(row.rawText, "T Lincont 100");   // what was read is never replaced
+});
+
+test("a line the person marked not identified is the same on screen and in the PDF, unpriced and uncounted", () => {
+  const row = byRaw["T Linogen XT"];
+  const pdf = pdfByRaw["T Linogen XT"];
+  assert.equal(rowStatus(row).text, "Not identified (by you)");
+  assert.equal(pdf.status, "Not identified (by you)");
+  assert.equal(confidenceText(row), "Marked by you");
+  assert.equal(pdf.confidence, "Marked by you");
+  assert.equal(row.doctorMedicine, null);
+  assert.equal(row.prescribedPrice, null);
+  assert.equal(pdf.saving, null);
+  assert.equal(pdf.price, null);
+});
+
+test("an unsettled line offers its look-alikes as unconfirmed and is unpriced", () => {
+  const row = byRaw["Tab Zincovit"];
+  assert.equal(rowStatus(row).text, "Needs verification");
+  assert.equal(pdfByRaw["Tab Zincovit"].status, "Needs verification");
+  assert.ok(row.closestGuesses.length >= 1);
+  assert.ok(row.verificationReasons.length >= 1);
+  assert.equal(row.doctorMedicine, null);
+  assert.equal(row.priceReliable, false);
+  assert.equal(pdfByRaw["Tab Zincovit"].price, null);
+});
+
+test("every decision is kept per line, and only on the lines it was made on", () => {
+  assert.deepEqual(byRaw["T Lincont 100"].verificationHistory.map((d) => d.decision), ["confirmed"]);
+  assert.equal(byRaw["T Lincont 100"].verificationHistory[0].warnings_acknowledged, true);
+  assert.deepEqual(byRaw["T Linogen XT"].verificationHistory.map((d) => d.decision), ["unmatched"]);
+  for (const raw of ["Tab Dolo 650", "Cap Omez 20", "Tab Zincovit", "Metformin"]) assert.deepEqual(byRaw[raw].verificationHistory, [], raw);
+});
+
+test("the headline savings count only what the PDF counts", () => {
+  const counted = rows.filter((r) => summarizeSavings([r]).savableCount === 1).map((r) => r.rawText);
+  assert.deepEqual(counted.sort(), fixture.pdf.lines.filter((l) => l.saving != null).map((l) => l.raw_text).sort());
+  for (const raw of ["Cap Omez 20", "T Lincont 100", "T Linogen XT", "Tab Zincovit", "Tab Dolo 650"]) assert.ok(!counted.includes(raw), raw);
+});

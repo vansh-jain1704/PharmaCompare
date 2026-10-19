@@ -19,8 +19,10 @@ export function summarizeDetail(detail) {
     identified: rows.filter((r) => r.doctorMedicine).length,
     autoMatched: rows.filter((r) => r.status === "matched").length,
     userConfirmed: rows.filter((r) => r.status === "user_confirmed").length,
-    needsVerification: rows.filter((r) => !r.doctorMedicine).length,
-    needsCheck: rows.filter((r) => r.doctorMedicine && (r.needsDisambiguation || r.ocrUncertain)).length,
+    // a line the person reviewed and marked "not identified" has been decided: it no longer waits on them
+    needsVerification: rows.filter((r) => !r.doctorMedicine && !r.userUnmatched).length,
+    markedUnidentified: rows.filter((r) => r.userUnmatched).length,
+    needsCheck: rows.filter((r) => r.doctorMedicine && (r.needsDisambiguation || r.ocrUncertain || r.needsCheck)).length,
     allergyAlerts: rows.filter((r) => r.allergyAlert).length,
     savings: savings.totalSaving || 0,
     savingsPercent: savings.percent,

@@ -149,7 +149,7 @@
 
 /* ---- Dashboard ----------------------------------------------------------------- */
 
-.action-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-4); }
+.action-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: var(--s-4); }
 .action {
   position: relative; display: flex; flex-direction: column; gap: 0.35rem; min-height: 190px; padding: var(--s-5);
   border-radius: var(--r-lg); background: var(--surface); border: 1px solid var(--line); text-decoration: none; color: var(--text);

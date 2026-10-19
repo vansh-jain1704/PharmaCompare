@@ -215,3 +215,61 @@ CREATE TABLE IF NOT EXISTS System_Logs (
     details   TEXT,
     FOREIGN KEY (user_id) REFERENCES Users(user_id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Data_Sources, Pharmacies and Pharmacy_Offers are ADDITIVE and start EMPTY. Empty offers mean no pharmacy has reported anything.
+-- Data_Sources: a registry of the data used (kinds: reference_dataset, interaction_dataset, pharmacy_feed, synthetic_demo).
+-- license is NULL when it is not recorded. retrieved_at is when we obtained the data, not when it was true.
+CREATE TABLE IF NOT EXISTS Data_Sources (
+    source_id     INT AUTO_INCREMENT PRIMARY KEY,
+    source_key    VARCHAR(80) NOT NULL UNIQUE,
+    name          VARCHAR(200) NOT NULL,
+    kind          VARCHAR(30) NOT NULL,
+    url           VARCHAR(500),
+    license       VARCHAR(200),
+    record_count  INT,
+    retrieved_at  DATETIME,
+    notes         TEXT,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS Pharmacies (
+    pharmacy_id INT AUTO_INCREMENT PRIMARY KEY,
+    name        VARCHAR(150) NOT NULL,
+    city        VARCHAR(100) NOT NULL DEFAULT '',
+    address     VARCHAR(255),
+    source_id   INT NOT NULL,
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_pharmacy (name, city, source_id),
+    FOREIGN KEY (source_id) REFERENCES Data_Sources(source_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Partner_Keys: API keys for pharmacy partners who PUSH reports (POST /api/feeds/offers). Only the SHA-256 hash of a key is stored: the key
+-- is shown once, when database/manage_partner_keys.py creates it. Starts EMPTY: no partner exists until someone creates one.
+CREATE TABLE IF NOT EXISTS Partner_Keys (
+    key_id       INT AUTO_INCREMENT PRIMARY KEY,
+    source_id    INT NOT NULL,
+    label        VARCHAR(100) NOT NULL,
+    key_prefix   CHAR(8) NOT NULL,
+    key_hash     CHAR(64) NOT NULL UNIQUE,
+    created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_used_at DATETIME NULL,
+    revoked_at   DATETIME NULL,
+    FOREIGN KEY (source_id) REFERENCES Data_Sources(source_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Pharmacy_Offers: one row per observation a pharmacy reported. price is NULL when only stock was reported.
+-- availability is in_stock, limited, out_of_stock or unknown. observed_at is required: a report with no time is not accepted.
+CREATE TABLE IF NOT EXISTS Pharmacy_Offers (
+    offer_id           INT AUTO_INCREMENT PRIMARY KEY,
+    pharmacy_id        INT NOT NULL,
+    medicine_id        INT NOT NULL,
+    price              DECIMAL(10,2),
+    availability       VARCHAR(20) NOT NULL DEFAULT 'unknown',
+    quantity_available INT,
+    observed_at        DATETIME NOT NULL,
+    imported_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_observation (pharmacy_id, medicine_id, observed_at),
+    INDEX idx_offer_medicine (medicine_id, observed_at),
+    FOREIGN KEY (pharmacy_id) REFERENCES Pharmacies(pharmacy_id) ON DELETE CASCADE,
+    FOREIGN KEY (medicine_id) REFERENCES Medicines(medicine_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

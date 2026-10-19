@@ -37,9 +37,15 @@ class HandwrittenPrescription(unittest.TestCase):
     def test_a_guess_never_contradicts_the_number_written_on_the_line(self):
         # "Lincont 100" must not be guessed as a 600 mg product, "Shelcal 500" not as a 400 mg one
         for line in ("T Lincont 100", "T. Shelcal 500", "T. pan - D 100"):
-            guess = self.match(line)["medicine"]
-            if guess:
+            result = self.match(line)
+            guess = result["medicine"]
+            if guess and not result.get("ignored_schedule_digits"):
                 self.assertIn("100" if "100" in line else "500", f"{guess['strength']} {guess['medicine_name']}", line)
+            # the ONE exception: three digits that look like a dose schedule ("100" = "1-0-0") may be set aside to offer the product
+            # the name fits - never to settle the line, and always saying so
+            if result.get("ignored_schedule_digits"):
+                self.assertEqual(result["status"], "needs_verification", line)
+                self.assertIn("dose schedule", result["guesses"][0]["reasons"][0], line)
 
     def test_durations_headings_and_instructions_are_not_medicines(self):
         for line in NOT_MEDICINES:

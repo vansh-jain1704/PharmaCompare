@@ -4,6 +4,7 @@ import { Check, CheckCircle2, FileText, Lightbulb, RotateCcw, ScanSearch, Upload
 import { uploadPrescription } from "../api/prescriptionApi";
 import { getErrorMessage } from "../api/getErrorMessage";
 import Page from "../components/Page";
+import PhotoQualityNotes from "../components/PhotoQualityNotes";
 import { ErrorState } from "../components/ui/States";
 
 const ALLOWED_EXTENSIONS = ["png", "jpg", "jpeg", "pdf"];
@@ -222,6 +223,7 @@ export default function UploadPrescription() {
                 <span className="state-icon is-ok"><CheckCircle2 size={28} /></span>
                 <h2>Your analysis is ready</h2>
                 <p className="small muted">{result.prescription_name || selectedFile?.name}</p>
+                <PhotoQualityNotes quality={result.image_quality} />
                 <div className="row" style={{ flexWrap: "wrap", justifyContent: "center" }}>
                   <Link to={`/prescriptions/${result.prescription_id}`} className="btn btn-primary btn-lg">View Analysis</Link>
                   <button type="button" className="btn btn-ghost" onClick={resetForm}>Analyze another</button>
@@ -235,6 +237,7 @@ export default function UploadPrescription() {
               <div className="alert alert-warn">
                 {result.message || "This image is too unclear to read reliably. Please retake the photo with better lighting and focus, then try again."}
               </div>
+              <PhotoQualityNotes quality={result.image_quality} />
               <button type="button" className="btn btn-secondary" onClick={resetForm}>Try again</button>
             </section>
           )}

@@ -28,7 +28,7 @@ import re
 
 from app.models.medicine_model import get_prescription_medicines
 from app.models.price_model import find_alternatives, get_group_prices, get_price_comparison, save_price_row
-from app.services import price_quality
+from app.services import price_provenance_service, price_quality
 from app.services.match_status import is_confirmed
 
 PRICE_SOURCE = "community_dataset:indian-medicine-dataset-github (see database/PROVENANCE.md)"
@@ -127,6 +127,7 @@ def compare_prescription_medicine(pm_row):
         release_type=pm_row.get("release_type"),
         composition=pm_row.get("composition"),
         pack_quantity=price_quality.pack_quantity(pack_size),
+        pack_size=pack_size,
     )
     stats = None
     if alt_rows or price_reliable:
@@ -190,6 +191,10 @@ def annotate_price_rows(rows):
     for row in rows:
         by_pm.setdefault(row["pm_id"], []).append(row)
 
+    # Where each price came from and how old the snapshot is, derived on every read from the stored import date (never stored).
+    for row in rows:
+        row["price_basis"] = price_provenance_service.reference_basis(row.get("price_date"))
+
     stats_cache = {}
     for group in by_pm.values():
         prescribed = next((r for r in group if r["row_type"] == "prescribed"), None)
@@ -242,6 +247,9 @@ def run_price_comparison(prescription_id):
         if comparison["verification_status"] == "confirmed" and comparison["reference_price"]["price"] is not None:
             price_date = pm["imported_at"].isoformat() if pm.get("imported_at") else None
             comparison["reference_price"]["price_date"] = price_date
+            comparison["reference_price"]["price_basis"] = price_provenance_service.reference_basis(price_date)
+            for alt in comparison["alternatives"]:
+                alt["price_basis"] = price_provenance_service.reference_basis(alt["price_date"])
 
             save_price_row(
                 pm["pm_id"], pm["medicine_id"], "prescribed",

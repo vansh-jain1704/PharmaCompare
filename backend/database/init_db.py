@@ -13,11 +13,25 @@ from app.db import get_connection
 SCHEMA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "schema.sql")
 
 
+def split_statements(schema_sql):
+    """
+    The schema's statements, split on semicolons AFTER the comments are removed. A semicolon inside a comment (the
+    Medicines.release_type note has one) used to cut a CREATE TABLE in half, so this script could not run end to end.
+    """
+    lines = []
+    for line in schema_sql.splitlines():
+        cut = line.find("--")
+        if cut >= 0 and line[:cut].count("'") % 2 == 0:      # a "--" outside a quoted string starts a comment
+            line = line[:cut]
+        lines.append(line)
+    return [statement.strip() for statement in chr(10).join(lines).split(";") if statement.strip()]
+
+
 def run():
     with open(SCHEMA_PATH, "r", encoding="utf-8") as f:
         schema_sql = f.read()
 
-    statements = [s.strip() for s in schema_sql.split(";") if s.strip()]
+    statements = split_statements(schema_sql)
 
     conn = get_connection()
     cursor = conn.cursor()
